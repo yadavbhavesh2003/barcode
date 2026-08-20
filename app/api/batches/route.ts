@@ -113,8 +113,8 @@ export async function POST(req: NextRequest) {
 
     const mergedPdfOptions: PDFOptions = {
       mode: pdfOptions?.mode || "4x6_2x5",
-      labelWidthMm: Number(settings.label_width_mm || 50),
-      labelHeightMm: Number(settings.label_height_mm || 25),
+      labelWidthMm: pdfOptions?.labelWidthMm !== undefined ? Number(pdfOptions.labelWidthMm) : Number(settings.label_width_mm || 50),
+      labelHeightMm: pdfOptions?.labelHeightMm !== undefined ? Number(pdfOptions.labelHeightMm) : Number(settings.label_height_mm || 25),
       website: pdfOptions?.website || settings.website || "https://runrkids.in/",
       currency: settings.currency || "INR",
       showHri: pdfOptions?.showHri === true, // Default false per user request

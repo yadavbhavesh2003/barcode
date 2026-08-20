@@ -408,14 +408,15 @@ export class PDFService {
 
       return new Uint8Array(doc.output("arraybuffer"));
     } else if (options.mode === "single") {
+      const orientation = labelWidth >= labelHeight ? "landscape" : "portrait";
       const doc = new jsPDF({
-        orientation: "landscape",
+        orientation: orientation,
         unit: "mm",
         format: [labelWidth, labelHeight],
       });
 
       for (let i = 0; i < items.length; i++) {
-        if (i > 0) doc.addPage([labelWidth, labelHeight], "landscape");
+        if (i > 0) doc.addPage([labelWidth, labelHeight], orientation);
         const item = items[i];
         const bg = barcodeImages[item.barcode];
 
@@ -584,70 +585,73 @@ export class PDFService {
       doc.roundedRect(x, y, w, h, 1.2, 1.2);
     }
 
-    if (w > 80 && h > 120) {
-      // Single Giant 4" x 6" Label Mode (1 Label fills entire 4x6 page)
+    if (h > 100 || (w > 80 && h > 80)) {
+      // Single Giant Label Mode (1 Label fills entire page height e.g. 4"x6" or 2.4"x6")
       const margin = 4.0;
       const contentW = w - margin * 2;
+      const sy = h / 152.4; // Height scale factor
 
       // 1. PRODUCT TITLE
       doc.setFont("helvetica", "bold");
       doc.setTextColor(0, 0, 0);
-      doc.setFontSize(16.0);
+      doc.setFontSize(Math.min(16.0, Math.max(10.0, 16.0 * (w / 101.6))));
       let splitName = doc.splitTextToSize(item.productName.toUpperCase(), contentW - 8);
       if (splitName.length > 2) splitName = splitName.slice(0, 2);
-      doc.text(splitName, x + w / 2, y + 18.0, { align: "center" });
+      doc.text(splitName, x + w / 2, y + 18.0 * sy, { align: "center" });
 
       // 2. GIANT BARCODE
       const isVertical = barcodeRotation === 90 || barcodeRotation === 270;
-      const bcW = isVertical ? 22.0 : Math.min(85.0, contentW - 10);
-      const bcH = isVertical ? 50.0 : 32.0;
+      const bcW = isVertical ? 22.0 * (w / 101.6) : Math.min(85.0 * (w / 101.6), contentW - 10);
+      const bcH = (isVertical ? 50.0 : 32.0) * sy;
       const bcX = x + (w - bcW) / 2;
-      const bcY = y + 26.0;
+      const bcY = y + 26.0 * sy;
       doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
 
       // 3. HRI NUMBER
       if (showHri) {
         doc.setFont("courier", "bold");
-        doc.setFontSize(12.0);
+        doc.setFontSize(Math.min(12.0, Math.max(8.0, 12.0 * (w / 101.6))));
         const spacedBarcode = item.barcode.split("").join(" ");
-        doc.text(spacedBarcode, x + w / 2, y + 64.0, { align: "center" });
+        doc.text(spacedBarcode, x + w / 2, y + 64.0 * sy, { align: "center" });
       }
 
       // 4. SALE PRICE HERO
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(16.0);
+      const titleFont = Math.min(16.0, Math.max(10.0, 16.0 * (w / 101.6)));
+      const priceFont = Math.min(26.0, Math.max(14.0, 26.0 * (w / 101.6)));
+      doc.setFontSize(titleFont);
       const labelW = doc.getTextWidth("SALE PRICE: ");
-      doc.setFontSize(26.0);
+      doc.setFontSize(priceFont);
       const amountStr = formatAmount(item.salesPrice);
       const priceW = doc.getTextWidth(amountStr);
       const startX = x + w / 2 - (labelW + priceW) / 2;
 
-      doc.setFontSize(16.0);
-      doc.text("SALE PRICE: ", startX, y + 84.0);
-      doc.setFontSize(26.0);
-      doc.text(amountStr, startX + labelW, y + 84.0);
+      doc.setFontSize(titleFont);
+      doc.text("SALE PRICE: ", startX, y + 84.0 * sy);
+      doc.setFontSize(priceFont);
+      doc.text(amountStr, startX + labelW, y + 84.0 * sy);
 
       // Separator 1
       doc.setLineWidth(0.4);
       doc.setDrawColor(40, 40, 40);
-      doc.line(x + margin + 4, y + 92.0, x + w - margin - 4, y + 92.0);
+      doc.line(x + margin + 4, y + 92.0 * sy, x + w - margin - 4, y + 92.0 * sy);
 
       // 5. MRP SECTION
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(16.0);
-      doc.text(`MRP: ${formatAmount(item.mrp)}`, x + w / 2, y + 108.0, { align: "center" });
+      doc.setFontSize(Math.min(16.0, Math.max(10.0, 16.0 * (w / 101.6))));
+      doc.text(`MRP: ${formatAmount(item.mrp)}`, x + w / 2, y + 108.0 * sy, { align: "center" });
 
       // Separator 2
-      doc.line(x + margin + 4, y + 116.0, x + w - margin - 4, y + 116.0);
+      doc.line(x + margin + 4, y + 116.0 * sy, x + w - margin - 4, y + 116.0 * sy);
 
       // 6. FOOTER ROW
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(11.0);
-      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, x + margin + 6, y + 138.0);
+      doc.setFontSize(Math.min(11.0, Math.max(7.0, 11.0 * (w / 101.6))));
+      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, x + margin + 6, y + 138.0 * sy);
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10.0);
-      doc.text(website, x + w - margin - 6, y + 138.0, { align: "right" });
+      doc.setFontSize(Math.min(10.0, Math.max(6.0, 10.0 * (w / 101.6))));
+      doc.text(website, x + w - margin - 6, y + 138.0 * sy, { align: "right" });
 
       return;
     }
