@@ -102,8 +102,8 @@ export function GenerationModal({
           showHri: showHri,
           barcodeRotation: barcodeRotation,
           layoutPreset: layoutPreset,
-          a4Columns: pdfMode === "a4" ? columns : 2,
-          a4Rows: pdfMode === "a4" ? rows : 1,
+          a4Columns: columns,
+          a4Rows: rows,
           a4MarginLeftMm: marginLeft,
           a4MarginTopMm: marginTop,
           a4GapXMm: gapX,
@@ -375,7 +375,7 @@ export function GenerationModal({
             </div>
 
             {/* Category 1: Single Thermal Roll Presets (1 Label / Roll - TSC TE244 Hardware Compatible) */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-zinc-900 dark:text-white flex items-center gap-1.5">
                   <Printer className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -385,206 +385,271 @@ export function GenerationModal({
                   1 Sticker per Row / Roll
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {/* Single Roll Preset 1: 2.0" x 1.0" (50x25mm) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPdfMode("single");
-                    setLabelWidth(50);
-                    setLabelHeight(25);
-                  }}
-                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
-                    pdfMode === "single" && labelWidth === 50 && labelHeight === 25
-                      ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20 dark:border-emerald-500 dark:bg-emerald-950/40 font-bold"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-                  }`}
-                >
-                  <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <div>
-                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
-                      2.0" × 1.0" Single Roll
-                    </div>
-                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
-                      50mm × 25mm Sticker
-                    </div>
-                  </div>
-                </button>
 
-                {/* Single Roll Preset 2: 2.4" x 1.0" (60.96x25mm) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPdfMode("single");
-                    setLabelWidth(60.96);
-                    setLabelHeight(25);
-                  }}
-                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
-                    pdfMode === "single" && labelWidth === 60.96 && labelHeight === 25
-                      ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20 dark:border-emerald-500 dark:bg-emerald-950/40 font-bold"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-                  }`}
-                >
-                  <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <div>
-                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
-                      2.4" × 1.0" Single Roll
+              {/* Sub-Group A: Giant Roll Presets (6.0" Full Height Page Tags) */}
+              <div className="space-y-1">
+                <span className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                  ★ Giant Full-Page Rolls (6.0" Height Tags):
+                </span>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                  {/* 1.0" x 6.0" Giant Roll */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfMode("4x6");
+                      setLabelWidth(25.4);
+                      setLabelHeight(152.4);
+                    }}
+                    className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                      pdfMode === "4x6" && labelWidth === 25.4
+                        ? "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                    }`}
+                  >
+                    <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                    <div>
+                      <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                        1.0" × 6.0" Giant
+                      </div>
+                      <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                        25.4mm × 152mm Narrow
+                      </div>
                     </div>
-                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
-                      61mm × 25mm Sticker
-                    </div>
-                  </div>
-                </button>
+                  </button>
 
-                {/* Single Roll Preset 3: 1.4" x 1.0" (35.56x25mm) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPdfMode("single");
-                    setLabelWidth(35.56);
-                    setLabelHeight(25);
-                  }}
-                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
-                    pdfMode === "single" && labelWidth === 35.56 && labelHeight === 25
-                      ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20 dark:border-emerald-500 dark:bg-emerald-950/40 font-bold"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-                  }`}
-                >
-                  <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <div>
-                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
-                      1.4" × 1.0" Single Roll
+                  {/* 1.4" x 6.0" Giant Roll */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfMode("4x6");
+                      setLabelWidth(35.56);
+                      setLabelHeight(152.4);
+                    }}
+                    className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                      pdfMode === "4x6" && labelWidth === 35.56
+                        ? "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                    }`}
+                  >
+                    <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                    <div>
+                      <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                        1.4" × 6.0" Giant
+                      </div>
+                      <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                        35.5mm × 152mm Tag
+                      </div>
                     </div>
-                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
-                      35.5mm × 25mm Sticker
-                    </div>
-                  </div>
-                </button>
+                  </button>
 
-                {/* Single Roll Preset 4: 2.0" x 1.5" (50x38mm) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPdfMode("single");
-                    setLabelWidth(50);
-                    setLabelHeight(38);
-                  }}
-                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
-                    pdfMode === "single" && labelWidth === 50 && labelHeight === 38
-                      ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20 dark:border-emerald-500 dark:bg-emerald-950/40 font-bold"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-                  }`}
-                >
-                  <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <div>
-                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
-                      2.0" × 1.5" Single Roll
+                  {/* 2.4" x 6.0" Giant Roll */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfMode("4x6");
+                      setLabelWidth(60.96);
+                      setLabelHeight(152.4);
+                    }}
+                    className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                      pdfMode === "4x6" && labelWidth === 60.96
+                        ? "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                    }`}
+                  >
+                    <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                    <div>
+                      <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                        2.4" × 6.0" Giant ★
+                      </div>
+                      <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                        61mm × 152mm Tag
+                      </div>
                     </div>
-                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
-                      50mm × 38mm Medium
-                    </div>
-                  </div>
-                </button>
+                  </button>
 
-                {/* Single Roll Preset 5: 1.4" x 6.0" Giant Roll */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPdfMode("4x6");
-                    setLabelWidth(35.56);
-                    setLabelHeight(152.4);
-                  }}
-                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
-                    pdfMode === "4x6" && labelWidth === 35.56
-                      ? "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-                  }`}
-                >
-                  <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                  <div>
-                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
-                      1.4" × 6.0" Giant Roll ★
+                  {/* 3.0" x 6.0" Giant Roll */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfMode("4x6");
+                      setLabelWidth(76.2);
+                      setLabelHeight(152.4);
+                    }}
+                    className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                      pdfMode === "4x6" && labelWidth === 76.2
+                        ? "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                    }`}
+                  >
+                    <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                    <div>
+                      <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                        3.0" × 6.0" Giant ★
+                      </div>
+                      <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                        76mm × 152mm Wide Tag
+                      </div>
                     </div>
-                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
-                      35.5mm × 152mm Full Page
-                    </div>
-                  </div>
-                </button>
+                  </button>
 
-                {/* Single Roll Preset 6: 2.4" x 6.0" Giant Roll */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPdfMode("4x6");
-                    setLabelWidth(60.96);
-                    setLabelHeight(152.4);
-                  }}
-                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
-                    pdfMode === "4x6" && labelWidth === 60.96
-                      ? "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-                  }`}
-                >
-                  <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                  <div>
-                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
-                      2.4" × 6.0" Giant Roll ★
+                  {/* 4.0" x 6.0" Giant Roll */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfMode("4x6");
+                      setLabelWidth(101.6);
+                      setLabelHeight(152.4);
+                    }}
+                    className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                      pdfMode === "4x6" && labelWidth === 101.6
+                        ? "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                    }`}
+                  >
+                    <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                    <div>
+                      <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                        4.0" × 6.0" Giant ★
+                      </div>
+                      <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                        102mm × 152mm Shipping
+                      </div>
                     </div>
-                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
-                      61mm × 152mm Full Page
-                    </div>
-                  </div>
-                </button>
+                  </button>
+                </div>
+              </div>
 
-                {/* Single Roll Preset 7: 4.0" x 6.0" Giant Roll */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPdfMode("4x6");
-                    setLabelWidth(101.6);
-                    setLabelHeight(152.4);
-                  }}
-                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
-                    pdfMode === "4x6" && labelWidth === 101.6
-                      ? "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-                  }`}
-                >
-                  <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                  <div>
-                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
-                      4.0" × 6.0" Giant Roll
+              {/* Sub-Group B: Standard 1-Up Sticker Rolls (1.0" - 2.0" Height) */}
+              <div className="space-y-1 pt-1">
+                <span className="text-[10.5px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
+                  Standard 1-Up Sticker Rolls (1.0" - 2.0" Height):
+                </span>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                  {/* 1.4" x 1.0" */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfMode("single");
+                      setLabelWidth(35.56);
+                      setLabelHeight(25);
+                    }}
+                    className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                      pdfMode === "single" && labelWidth === 35.56 && labelHeight === 25
+                        ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20 dark:border-emerald-500 dark:bg-emerald-950/40 font-bold"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                    }`}
+                  >
+                    <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <div>
+                      <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                        1.4" × 1.0" Roll
+                      </div>
+                      <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                        35.5mm × 25mm
+                      </div>
                     </div>
-                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
-                      102mm × 152mm Shipping
-                    </div>
-                  </div>
-                </button>
+                  </button>
 
-                {/* Single Roll Preset 8: 2.0" x 2.0" Square */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPdfMode("single");
-                    setLabelWidth(50);
-                    setLabelHeight(50);
-                  }}
-                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
-                    pdfMode === "single" && labelWidth === 50 && labelHeight === 50
-                      ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20 dark:border-emerald-500 dark:bg-emerald-950/40 font-bold"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-                  }`}
-                >
-                  <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <div>
-                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
-                      2.0" × 2.0" Square Roll
+                  {/* 2.0" x 1.0" */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfMode("single");
+                      setLabelWidth(50);
+                      setLabelHeight(25);
+                    }}
+                    className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                      pdfMode === "single" && labelWidth === 50 && labelHeight === 25
+                        ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20 dark:border-emerald-500 dark:bg-emerald-950/40 font-bold"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                    }`}
+                  >
+                    <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <div>
+                      <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                        2.0" × 1.0" Roll
+                      </div>
+                      <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                        50mm × 25mm
+                      </div>
                     </div>
-                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
-                      50mm × 50mm Square Tag
+                  </button>
+
+                  {/* 2.4" x 1.0" */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfMode("single");
+                      setLabelWidth(60.96);
+                      setLabelHeight(25);
+                    }}
+                    className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                      pdfMode === "single" && labelWidth === 60.96 && labelHeight === 25
+                        ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20 dark:border-emerald-500 dark:bg-emerald-950/40 font-bold"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                    }`}
+                  >
+                    <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <div>
+                      <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                        2.4" × 1.0" Roll
+                      </div>
+                      <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                        61mm × 25mm
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+
+                  {/* 3.0" x 1.0" */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfMode("single");
+                      setLabelWidth(76.2);
+                      setLabelHeight(25);
+                    }}
+                    className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                      pdfMode === "single" && labelWidth === 76.2 && labelHeight === 25
+                        ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20 dark:border-emerald-500 dark:bg-emerald-950/40 font-bold"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                    }`}
+                  >
+                    <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <div>
+                      <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                        3.0" × 1.0" Roll
+                      </div>
+                      <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                        76mm × 25mm
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* 4.0" x 1.0" */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfMode("single");
+                      setLabelWidth(101.6);
+                      setLabelHeight(25);
+                    }}
+                    className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                      pdfMode === "single" && labelWidth === 101.6 && labelHeight === 25
+                        ? "border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/20 dark:border-emerald-500 dark:bg-emerald-950/40 font-bold"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                    }`}
+                  >
+                    <FileText className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <div>
+                      <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                        4.0" × 1.0" Roll
+                      </div>
+                      <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                        102mm × 25mm Wide
+                      </div>
+                    </div>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -594,7 +659,88 @@ export function GenerationModal({
                 <LayoutGrid className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                 Multi-Label Sheets & 2-Up Thermal Rolls:
               </label>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                {/* 4x6 Sheet (1x6 = 6 Labels) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPdfMode("4x6_grid");
+                    setColumns(1);
+                    setRows(6);
+                    setLabelWidth(96.0);
+                    setLabelHeight(23.5);
+                  }}
+                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                    pdfMode === "4x6_grid" && columns === 1 && rows === 6
+                      ? "border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
+                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                  }`}
+                >
+                  <LayoutGrid className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  <div>
+                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                      4" × 6" Sheet (1×6) ★
+                    </div>
+                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                      6 labels/sheet (96×23.5)
+                    </div>
+                  </div>
+                </button>
+
+                {/* 4x6 Sheet (2x6 = 12 Labels) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPdfMode("4x6_grid");
+                    setColumns(2);
+                    setRows(6);
+                    setLabelWidth(48.0);
+                    setLabelHeight(23.5);
+                  }}
+                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                    pdfMode === "4x6_grid" && columns === 2 && rows === 6
+                      ? "border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
+                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                  }`}
+                >
+                  <LayoutGrid className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  <div>
+                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                      4" × 6" Sheet (2×6)
+                    </div>
+                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                      12 labels/sheet (48×23.5)
+                    </div>
+                  </div>
+                </button>
+
+                {/* 4x6 Sheet (3x6 = 18 Labels) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPdfMode("4x6_grid");
+                    setColumns(3);
+                    setRows(6);
+                    setLabelWidth(31.0);
+                    setLabelHeight(23.5);
+                  }}
+                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
+                    pdfMode === "4x6_grid" && columns === 3 && rows === 6
+                      ? "border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
+                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+                  }`}
+                >
+                  <LayoutGrid className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  <div>
+                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
+                      4" × 6" Sheet (3×6) ★
+                    </div>
+                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
+                      18 labels/sheet (31×23.5)
+                    </div>
+                  </div>
+                </button>
+
                 {/* 4x6 Sheet (2x5 = 10 Labels) */}
                 <button
                   type="button"
@@ -617,34 +763,7 @@ export function GenerationModal({
                       4" × 6" Sheet (2×5)
                     </div>
                     <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
-                      10 labels/sheet (47x23.5)
-                    </div>
-                  </div>
-                </button>
-
-                {/* 4x6 Sheet (2x6 = 12 Labels) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPdfMode("4x6_grid");
-                    setColumns(2);
-                    setRows(6);
-                    setLabelWidth(48.0);
-                    setLabelHeight(23.5);
-                  }}
-                  className={`flex flex-col gap-1 rounded-xl border p-2.5 text-left transition-all ${
-                    pdfMode === "4x6_grid" && rows === 6
-                      ? "border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-600/20 dark:border-indigo-500 dark:bg-indigo-950/40 font-bold"
-                      : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-                  }`}
-                >
-                  <LayoutGrid className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                  <div>
-                    <div className="text-[11px] font-bold text-zinc-900 dark:text-white leading-tight">
-                      4" × 6" Sheet (2×6)
-                    </div>
-                    <div className="text-[9.5px] text-zinc-500 leading-tight mt-0.5">
-                      12 labels/sheet
+                      10 labels/sheet (47×23.5)
                     </div>
                   </div>
                 </button>
