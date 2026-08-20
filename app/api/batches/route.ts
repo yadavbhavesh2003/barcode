@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+// Batch Processing API Route - High performance 1,000+ barcode support
 import {
   connectToDatabase,
   GenerationBatchModel,
@@ -70,18 +71,24 @@ export async function POST(req: NextRequest) {
     });
 
     const batchId = batchDoc._id;
-    let barcodeIndex = 0;
-    const labelItems: LabelItemData[] = [];
-    const barcodeDocs = [];
 
-    // 4. Create Product & Barcode records
-    for (const prod of products) {
-      const prodDoc = await ProductModel.create({
-        name: prod.productName,
-        mrp: prod.mrp,
-        salesPrice: prod.salesPrice,
-        netQuantity: prod.netQuantity || "1U",
-      });
+    // 4. Create Product & Barcode records in bulk (High performance for 1,000+ items)
+    const productDocsToInsert = products.map((prod) => ({
+      name: prod.productName,
+      mrp: prod.mrp,
+      salesPrice: prod.salesPrice,
+      netQuantity: prod.netQuantity || "1U",
+    }));
+
+    const createdProdDocs = await ProductModel.insertMany(productDocsToInsert);
+
+    const barcodeDocs = [];
+    const labelItems: LabelItemData[] = [];
+    let barcodeIndex = 0;
+
+    for (let i = 0; i < products.length; i++) {
+      const prod = products[i];
+      const prodDoc = createdProdDocs[i];
 
       for (let q = 0; q < prod.quantity; q++) {
         const barcodeValue = barcodes[barcodeIndex++];
@@ -131,6 +138,7 @@ export async function POST(req: NextRequest) {
       barcodeHeightMm: pdfOptions?.barcodeHeightMm ?? Number(settings.barcode_height_mm || 6.5),
       barcodeRotation: pdfOptions?.barcodeRotation ?? (Number(settings.barcode_rotation || 0) as 0 | 90 | 180 | 270),
       layoutPreset: pdfOptions?.layoutPreset ?? ((settings.layout_preset || "standard") as any),
+      autoCenter: pdfOptions?.autoCenter !== false,
     };
 
     // 6. Generate PDF Buffer

@@ -31,6 +31,7 @@ export interface PDFOptions {
   a4GapYMm?: number;
   a4Columns?: number;
   a4Rows?: number;
+  autoCenter?: boolean;
 }
 
 export interface LabelTemplateConfig {
@@ -254,86 +255,39 @@ export class PDFService {
     const template = this.getDefaultTemplate();
 
     if (options.mode === "4x6_2x5") {
-      // 4" x 6" Sheet (2 Cols x 5 Rows = 10 Labels per Page, balanced margins & gaps)
       const pageW = 101.6;
       const pageH = 152.4;
 
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: [pageW, pageH],
-      });
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [pageW, pageH] });
 
-      const columns = 2;
-      const rows = 5;
-      const lWidth = 47.0;
-      const lHeight = 23.5; // Reduced height per user request
-      const gapX = 2.6;
-      const gapY = 4.0;
+      const columns  = options.a4Columns   ?? 2;
+      const lWidth   = options.labelWidthMm  || 47.0;
+      const lHeight  = options.labelHeightMm || 23.5;
 
-      // Auto-calculate exact centered margins for 101.6mm x 152.4mm sheet
-      const marginLeft = (pageW - (columns * lWidth + (columns - 1) * gapX)) / 2; // 2.5mm
-      const marginTop = (pageH - (rows * lHeight + (rows - 1) * gapY)) / 2; // 9.4mm
+      const gapX = options.a4GapXMm ?? 2.6;
+      const gapY = options.a4GapYMm ?? 4.0; // Always honor requested vertical gap
 
-      const labelsPerPage = columns * rows; // 10
-      let labelIdx = 0;
+      // Calculate max rows that fit per page with requested gapY
+      const topPad = (options.a4MarginTopMm !== undefined && options.a4MarginTopMm > 0) ? options.a4MarginTopMm : 4.0;
+      const availH = pageH - topPad;
+      const rowH   = lHeight + gapY;
 
-      for (let i = 0; i < items.length; i++) {
-        if (i > 0 && i % labelsPerPage === 0) {
-          doc.addPage([pageW, pageH], "portrait");
-          labelIdx = 0;
-        }
-
-        const col = labelIdx % columns;
-        const row = Math.floor(labelIdx / columns);
-
-        const x = marginLeft + col * (lWidth + gapX) + offsetX;
-        const y = marginTop + row * (lHeight + gapY) + offsetY;
-
-        const item = items[i];
-        const bg = barcodeImages[item.barcode];
-
-        this.renderSingleLabelAt(
-          doc,
-          item,
-          bg,
-          x,
-          y,
-          lWidth,
-          lHeight,
-          website,
-          currency,
-          showHri,
-          showBorder,
-          template,
-          layoutPreset,
-          barcodeRotation
-        );
-        labelIdx++;
+      let rows = options.a4Rows ?? 5;
+      if (topPad + rows * lHeight + (rows - 1) * gapY > pageH + 0.5) {
+        rows = Math.max(1, Math.floor((availH + gapY) / rowH));
       }
 
-      return new Uint8Array(doc.output("arraybuffer"));
-    } else if (options.mode === "4x6_grid") {
-      // 4" x 6" Sheet Multi-Label Grid (2 Cols x 6 Rows = 12 Labels per Page, balanced margins & gaps)
-      const pageW = 101.6;
-      const pageH = 152.4;
+      const totalGridW = columns * lWidth + (columns - 1) * gapX;
+      const totalGridH = rows * lHeight + (rows - 1) * gapY;
 
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: [pageW, pageH],
-      });
+      const autoMarginLeft = Math.max(0, (pageW - totalGridW) / 2);
+      const autoMarginTop  = Math.max(2.0, (pageH - totalGridH) / 2);
 
-      const columns = options.a4Columns ?? 2;
-      const rows = options.a4Rows ?? 6;
-      const lWidth = 47.0;
-      const lHeight = 23.5;
-      const gapX = 2.6;
-      const gapY = 1.5;
-
-      // Auto-calculate exact centered margins for 101.6mm x 152.4mm sheet
-      const marginLeft = (pageW - (columns * lWidth + (columns - 1) * gapX)) / 2; // 2.5mm
-      const marginTop = (pageH - (rows * lHeight + (rows - 1) * gapY)) / 2; // 3.7mm
+      const isAutoCenter = options.autoCenter !== false;
+      const marginLeft = isAutoCenter ? autoMarginLeft : (options.a4MarginLeftMm ?? autoMarginLeft);
+      const marginTop  = (options.a4MarginTopMm !== undefined && options.a4MarginTopMm > 0)
+        ? options.a4MarginTopMm
+        : (isAutoCenter ? autoMarginTop : 4.0);
 
       const labelsPerPage = columns * rows;
       let labelIdx = 0;
@@ -343,48 +297,100 @@ export class PDFService {
           doc.addPage([pageW, pageH], "portrait");
           labelIdx = 0;
         }
-
         const col = labelIdx % columns;
         const row = Math.floor(labelIdx / columns);
+        const x = marginLeft + col * (lWidth  + gapX) + offsetX;
+        const y = marginTop  + row * (lHeight + gapY) + offsetY;
+        this.renderSingleLabelAt(doc, items[i], barcodeImages[items[i].barcode],
+          x, y, lWidth, lHeight, website, currency, showHri, showBorder,
+          template, layoutPreset, barcodeRotation);
+        labelIdx++;
+      }
 
-        const x = marginLeft + col * (lWidth + gapX) + offsetX;
-        const y = marginTop + row * (lHeight + gapY) + offsetY;
+      return new Uint8Array(doc.output("arraybuffer"));
+    } else if (options.mode === "4x6_grid") {
+      const pageW = 101.6;
+      const pageH = 152.4;
 
-        const item = items[i];
-        const bg = barcodeImages[item.barcode];
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [pageW, pageH] });
 
-        this.renderSingleLabelAt(
-          doc,
-          item,
-          bg,
-          x,
-          y,
-          lWidth,
-          lHeight,
-          website,
-          currency,
-          showHri,
-          showBorder,
-          template,
-          layoutPreset,
-          barcodeRotation
-        );
+      const columns  = options.a4Columns   ?? 2;
+      const lWidth   = options.labelWidthMm  || (columns === 1 ? 96.0 : columns === 3 ? 31.0 : 47.0);
+      const lHeight  = options.labelHeightMm || 23.5;
+
+      const gapX = options.a4GapXMm ?? (columns === 1 ? 0 : columns === 3 ? 2.0 : 2.6);
+      const gapY = options.a4GapYMm ?? (columns === 1 ? 4.0 : 2.0); // Always honor requested vertical gap
+
+      // Calculate max rows that fit per page with requested gapY
+      const topPad = (options.a4MarginTopMm !== undefined && options.a4MarginTopMm > 0) ? options.a4MarginTopMm : 4.0;
+      const availH = pageH - topPad;
+      const rowH   = lHeight + gapY;
+
+      let rows = options.a4Rows ?? (columns === 1 ? 5 : 6);
+      if (topPad + rows * lHeight + (rows - 1) * gapY > pageH + 0.5) {
+        rows = Math.max(1, Math.floor((availH + gapY) / rowH));
+      }
+
+      const totalGridW = columns * lWidth + (columns - 1) * gapX;
+      const totalGridH = rows * lHeight + (rows - 1) * gapY;
+
+      const autoMarginLeft = Math.max(0, (pageW - totalGridW) / 2);
+      const autoMarginTop  = Math.max(2.0, (pageH - totalGridH) / 2);
+
+      const isAutoCenter = options.autoCenter !== false;
+      const marginLeft = isAutoCenter ? autoMarginLeft : (options.a4MarginLeftMm ?? autoMarginLeft);
+      const marginTop  = (options.a4MarginTopMm !== undefined && options.a4MarginTopMm > 0)
+        ? options.a4MarginTopMm
+        : (isAutoCenter ? autoMarginTop : 4.0);
+
+      const labelsPerPage = columns * rows;
+      let labelIdx = 0;
+
+      for (let i = 0; i < items.length; i++) {
+        if (i > 0 && i % labelsPerPage === 0) {
+          doc.addPage([pageW, pageH], "portrait");
+          labelIdx = 0;
+        }
+        const col = labelIdx % columns;
+        const row = Math.floor(labelIdx / columns);
+        const x = marginLeft + col * (lWidth  + gapX) + offsetX;
+        const y = marginTop  + row * (lHeight + gapY) + offsetY;
+        this.renderSingleLabelAt(doc, items[i], barcodeImages[items[i].barcode],
+          x, y, lWidth, lHeight, website, currency, showHri, showBorder,
+          template, layoutPreset, barcodeRotation);
         labelIdx++;
       }
 
       return new Uint8Array(doc.output("arraybuffer"));
     } else if (options.mode === "4x6") {
-      const w46 = options.labelWidthMm || 101.6;
-      const h46 = options.labelHeightMm || 152.4;
+      const pageW = 101.6;
+      const pageH = 152.4;
+      const lWidth = options.labelWidthMm || 101.6;
+      const lHeight = options.labelHeightMm || 152.4;
 
       const doc = new jsPDF({
         orientation: "portrait",
         unit: "mm",
-        format: [w46, h46],
+        format: [pageW, pageH],
       });
 
+      // Calculate label position on 4"x6" paper
+      const isAutoCenter = options.autoCenter !== false;
+      const labelX = isAutoCenter ? Math.max(0, (pageW - lWidth) / 2) + offsetX : (options.a4MarginLeftMm || 0) + offsetX;
+
+      // Vertical position: use explicit top margin if provided; else auto-center if smaller than page, or default 8mm padding
+      const customTopMargin = options.a4MarginTopMm;
+      let labelY = offsetY;
+      if (customTopMargin !== undefined && customTopMargin > 0) {
+        labelY += customTopMargin;
+      } else if (isAutoCenter && lHeight < pageH) {
+        labelY += Math.max(8.0, (pageH - lHeight) / 2);
+      } else {
+        labelY += 8.0; // default top padding to prevent top-edge clipping
+      }
+
       for (let i = 0; i < items.length; i++) {
-        if (i > 0) doc.addPage([w46, h46], "portrait");
+        if (i > 0) doc.addPage([pageW, pageH], "portrait");
         const item = items[i];
         const bg = barcodeImages[item.barcode];
 
@@ -392,10 +398,10 @@ export class PDFService {
           doc,
           item,
           bg,
-          offsetX,
-          offsetY,
-          w46,
-          h46,
+          labelX,
+          labelY,
+          lWidth,
+          lHeight,
           website,
           currency,
           showHri,

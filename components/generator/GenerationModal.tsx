@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   CheckCircle2,
   Download,
@@ -14,6 +14,7 @@ import {
   ChevronUp,
   Printer,
   Settings2,
+  ExternalLink,
 } from "lucide-react";
 
 interface GenerationModalProps {
@@ -34,6 +35,8 @@ export function GenerationModal({
   parseResult,
   onSuccess,
 }: GenerationModalProps) {
+  const modalScrollRef = useRef<HTMLDivElement>(null);
+
   const [pdfMode, setPdfMode] = useState<"thermal2up" | "single" | "a4" | "4x6" | "4x6_grid" | "4x6_2x5">("4x6_2x5");
   const [a4Preset, setA4Preset] = useState<"2x5" | "2x4" | "3x8" | "custom">("2x5");
 
@@ -53,13 +56,35 @@ export function GenerationModal({
   const [barcodeRotation, setBarcodeRotation] = useState<0 | 90 | 180 | 270>(0);
   const [layoutPreset, setLayoutPreset] = useState<"standard" | "barcode_bottom" | "vertical_left" | "vertical_right">("standard");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [autoCenter, setAutoCenter] = useState(true); // Auto-center content on page
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedResult, setGeneratedResult] = useState<any | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  // PDF Preview States — Open & Live by default
+  const [isPreviewing, setIsPreviewing] = useState(true);
+  const [previewPdfBase64, setPreviewPdfBase64] = useState<string | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
   const validRows = parseResult.rows.filter((r) => r.isValid);
+
+  const getPdfOptionsPayload = () => ({
+    mode: pdfMode,
+    labelWidthMm: labelWidth,
+    labelHeightMm: labelHeight,
+    showBorder: showBorder,
+    showHri: showHri,
+    barcodeRotation: barcodeRotation,
+    layoutPreset: layoutPreset,
+    a4Columns: columns,
+    a4Rows: rows,
+    a4MarginLeftMm: marginLeft,
+    a4MarginTopMm: marginTop,
+    a4GapXMm: gapX,
+    a4GapYMm: gapY,
+    barcodeHeightMm: barcodeHeight,
+    autoCenter: autoCenter,
+  });
 
   const handlePresetChange = (preset: "2x5" | "2x4" | "3x8" | "custom") => {
     setA4Preset(preset);
@@ -87,6 +112,66 @@ export function GenerationModal({
     }
   };
 
+  const handleFetchPreview = async () => {
+    setIsLoadingPreview(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch("/api/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          products: validRows.map((r) => ({
+            productName: r.productName,
+            mrp: r.mrp,
+            salesPrice: r.salesPrice,
+            quantity: r.quantity,
+            netQuantity: r.netQuantity,
+          })),
+          pdfOptions: getPdfOptionsPayload(),
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.pdfBase64) {
+        setPreviewPdfBase64(data.pdfBase64);
+        setIsPreviewing(true);
+      } else {
+        throw new Error(data.error || "Failed to render PDF preview.");
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Preview error occurred.");
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
+  // Live preview auto-update on configuration change (300ms debounce)
+  useEffect(() => {
+    if (!isOpen || !isPreviewing) return;
+    const timer = setTimeout(() => {
+      handleFetchPreview();
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [
+    isOpen,
+    pdfMode,
+    labelWidth,
+    labelHeight,
+    columns,
+    rows,
+    marginLeft,
+    marginTop,
+    gapX,
+    gapY,
+    showBorder,
+    showHri,
+    barcodeRotation,
+    layoutPreset,
+    autoCenter,
+  ]);
+
+  if (!isOpen) return null;
+
   const handleGenerate = async () => {
     setIsGenerating(true);
     setErrorMsg(null);
@@ -94,22 +179,7 @@ export function GenerationModal({
     try {
       const payload = {
         fileName: parseResult.fileName,
-        pdfOptions: {
-          mode: pdfMode,
-          labelWidthMm: labelWidth,
-          labelHeightMm: labelHeight,
-          showBorder: showBorder,
-          showHri: showHri,
-          barcodeRotation: barcodeRotation,
-          layoutPreset: layoutPreset,
-          a4Columns: columns,
-          a4Rows: rows,
-          a4MarginLeftMm: marginLeft,
-          a4MarginTopMm: marginTop,
-          a4GapXMm: gapX,
-          a4GapYMm: gapY,
-          barcodeHeightMm: barcodeHeight,
-        },
+        pdfOptions: getPdfOptionsPayload(),
         products: validRows.map((r) => ({
           productName: r.productName,
           mrp: r.mrp,
@@ -267,8 +337,17 @@ export function GenerationModal({
     return new Blob([arr], { type });
   }
 
+  const handleScrollToTop = () => {
+    if (modalScrollRef.current) {
+      modalScrollRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+    <div
+      ref={modalScrollRef}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto scroll-smooth"
+    >
       <div className="my-8 w-full max-w-3xl sm:max-w-4xl rounded-2xl border border-zinc-200 bg-white p-6 sm:p-7 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 transition-all">
         <div className="flex items-center justify-between border-b border-zinc-100 pb-4 dark:border-zinc-800">
           <div className="flex items-center gap-2">
@@ -1119,74 +1198,337 @@ export function GenerationModal({
               </div>
             )}
 
-            {/* Active Media & Dimension Indicator Box */}
-            <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3.5 dark:border-indigo-900/60 dark:bg-indigo-950/40 text-xs">
-              <div className="flex items-center justify-between font-semibold text-indigo-900 dark:text-indigo-300 mb-2">
-                <span className="flex items-center gap-1.5">
-                  <Sliders className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                  Active Media Dimensions:
+            {/* ─────────────── SPACING & GAP CONTROL PANEL ─────────────── */}
+            <div className="rounded-xl border-2 border-indigo-300 bg-gradient-to-br from-indigo-50 to-white dark:border-indigo-700 dark:from-indigo-950/40 dark:to-zinc-900 shadow-sm overflow-hidden">
+
+              {/* Panel Header */}
+              <div className="flex items-center justify-between bg-indigo-600 px-4 py-2">
+                <span className="flex items-center gap-2 text-xs font-bold text-white">
+                  <Sliders className="h-3.5 w-3.5" />
+                  Spacing Between Barcodes — Fully Customizable
                 </span>
-                <span className="font-mono bg-indigo-100 dark:bg-indigo-900/70 px-2 py-0.5 rounded text-[11px] font-bold">
-                  {labelWidth}mm × {labelHeight}mm ({(labelWidth / 25.4).toFixed(1)}" × {(labelHeight / 25.4).toFixed(1)}")
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10.5px] font-bold text-white font-mono">
+                    Gap Y: {gapY}mm &nbsp;|&nbsp; Gap X: {gapX}mm
+                  </span>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+              <div className="p-4 space-y-4">
+
+                {/* ── Vertical Gap (between rows) ── */}
                 <div>
-                  <label className="text-zinc-600 dark:text-zinc-400 font-medium">Width (mm)</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200">
+                      ↕ Vertical Gap Between Rows (mm)
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/60 px-2 py-0.5 rounded">
+                      {gapY} mm
+                    </span>
+                  </div>
+
+                  {/* Slider */}
                   <input
-                    type="number"
-                    step="0.1"
-                    value={labelWidth}
-                    onChange={(e) => setLabelWidth(Number(e.target.value))}
-                    className="h-8 w-full rounded-lg border border-zinc-300 px-2 font-mono font-bold text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                    type="range"
+                    min="0"
+                    max="30"
+                    step="0.5"
+                    value={gapY}
+                    onChange={(e) => setGapY(Number(e.target.value))}
+                    className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-600 bg-indigo-200 dark:bg-indigo-900"
                   />
-                  <span className="text-[9.5px] text-zinc-500 font-mono">{(labelWidth / 25.4).toFixed(2)}" inches</span>
+                  <div className="flex justify-between text-[9px] text-zinc-400 mt-0.5 px-0.5">
+                    <span>0mm</span><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span><span>30mm</span>
+                  </div>
+
+                  {/* Quick Preset Buttons */}
+                  <div className="flex gap-1.5 flex-wrap mt-2">
+                    {[0, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20].map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setGapY(v)}
+                        className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold transition-all border ${
+                          gapY === v
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                            : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-indigo-400 hover:text-indigo-600"
+                        }`}
+                      >
+                        {v}
+                      </button>
+                    ))}
+
+                    {/* Custom number input */}
+                    <div className="flex items-center gap-1 rounded-lg border-2 border-indigo-400 dark:border-indigo-600 bg-white dark:bg-zinc-900 px-2 py-0.5 ml-1">
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        step="0.5"
+                        value={gapY}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (!isNaN(v) && v >= 0) setGapY(v);
+                        }}
+                        className="w-14 bg-transparent text-[12px] font-bold text-indigo-700 dark:text-indigo-300 outline-none text-center font-mono"
+                      />
+                      <span className="text-[10px] font-bold text-indigo-500">mm</span>
+                    </div>
+                  </div>
                 </div>
 
+                {/* ── Top Margin / Top Offset (Push down from top paper edge) ── */}
                 <div>
-                  <label className="text-zinc-600 dark:text-zinc-400 font-medium">Height (mm)</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
+                      ⬇ Top Margin / Top Offset from Edge (mm)
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded">
+                      {marginTop} mm
+                    </span>
+                  </div>
+
                   <input
-                    type="number"
-                    step="0.1"
-                    value={labelHeight}
-                    onChange={(e) => setLabelHeight(Number(e.target.value))}
-                    className="h-8 w-full rounded-lg border border-zinc-300 px-2 font-mono font-bold text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                    type="range"
+                    min="0"
+                    max="60"
+                    step="1"
+                    value={marginTop}
+                    onChange={(e) => {
+                      setMarginTop(Number(e.target.value));
+                      setAutoCenter(false); // disable auto-center if user explicitly sets top margin
+                    }}
+                    className="w-full h-2 rounded-full appearance-none cursor-pointer accent-amber-600 bg-amber-200 dark:bg-amber-900"
                   />
-                  <span className="text-[9.5px] text-zinc-500 font-mono">{(labelHeight / 25.4).toFixed(2)}" inches</span>
+
+                  <div className="flex gap-1.5 flex-wrap mt-2">
+                    {[0, 5, 10, 15, 20, 30, 40, 50].map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          setMarginTop(v);
+                          setAutoCenter(false);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold transition-all border ${
+                          marginTop === v && !autoCenter
+                            ? "bg-amber-600 text-white border-amber-600 shadow-sm"
+                            : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-amber-400"
+                        }`}
+                      >
+                        {v}mm
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setAutoCenter(true)}
+                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold transition-all border ${
+                        autoCenter
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                          : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-indigo-400"
+                      }`}
+                    >
+                      🎯 Auto-Center Vertically
+                    </button>
+                  </div>
                 </div>
 
+                {/* ── Horizontal Gap (between columns) ── */}
                 <div>
-                  <label className="text-zinc-600 dark:text-zinc-400 font-medium">Printer Mode</label>
-                  <select
-                    value={pdfMode}
-                    onChange={(e) => setPdfMode(e.target.value as any)}
-                    className="h-8 w-full rounded-lg border border-zinc-300 px-1 font-mono text-[10.5px] font-semibold dark:border-zinc-700 dark:bg-zinc-900"
-                  >
-                    <option value="single">1-Up Single Roll</option>
-                    <option value="4x6">Giant Roll / Full Page</option>
-                    <option value="thermal2up">2-Up Thermal Roll</option>
-                    <option value="4x6_2x5">4"×6" Sheet (2×5)</option>
-                    <option value="a4">A4 Sheet Grid</option>
-                  </select>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200">
+                      ↔ Horizontal Gap Between Columns (mm)
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded">
+                      {gapX} mm
+                    </span>
+                  </div>
+
+                  <input
+                    type="range"
+                    min="0"
+                    max="20"
+                    step="0.5"
+                    value={gapX}
+                    onChange={(e) => setGapX(Number(e.target.value))}
+                    className="w-full h-2 rounded-full appearance-none cursor-pointer accent-emerald-600 bg-emerald-200 dark:bg-emerald-900"
+                  />
+
+                  <div className="flex gap-1.5 flex-wrap mt-2">
+                    {[0, 1, 2, 2.6, 3, 4, 5, 6, 8, 10].map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setGapX(v)}
+                        className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold transition-all border ${
+                          gapX === v
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                            : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-emerald-400"
+                        }`}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                    <div className="flex items-center gap-1 rounded-lg border-2 border-emerald-400 dark:border-emerald-600 bg-white dark:bg-zinc-900 px-2 py-0.5 ml-1">
+                      <input
+                        type="number"
+                        min="0"
+                        max="30"
+                        step="0.5"
+                        value={gapX}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (!isNaN(v) && v >= 0) setGapX(v);
+                        }}
+                        className="w-14 bg-transparent text-[12px] font-bold text-emerald-700 dark:text-emerald-300 outline-none text-center font-mono"
+                      />
+                      <span className="text-[10px] font-bold text-emerald-500">mm</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="text-zinc-600 dark:text-zinc-400 font-medium">Border Line</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowBorder(!showBorder)}
-                    className={`h-8 w-full rounded-lg border text-[11px] font-semibold transition-all ${
-                      showBorder
-                        ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                        : "border-zinc-300 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-                    }`}
-                  >
-                    {showBorder ? "✓ Border ON" : "✕ Border OFF"}
-                  </button>
+                {/* ── Dimensions + Mode + Centering row ── */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-3 border-t border-indigo-100 dark:border-indigo-900 text-[11px]">
+                  <div>
+                    <label className="text-zinc-500 dark:text-zinc-400 font-semibold">Label Width (mm)</label>
+                    <div className="relative mt-0.5">
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={labelWidth}
+                        onChange={(e) => setLabelWidth(Number(e.target.value))}
+                        className="h-8 w-full rounded-lg border border-zinc-300 px-2 pr-9 font-mono font-bold text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-zinc-400">{(labelWidth/25.4).toFixed(1)}″</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-zinc-500 dark:text-zinc-400 font-semibold">Label Height (mm)</label>
+                    <div className="relative mt-0.5">
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={labelHeight}
+                        onChange={(e) => setLabelHeight(Number(e.target.value))}
+                        className="h-8 w-full rounded-lg border border-zinc-300 px-2 pr-9 font-mono font-bold text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-zinc-400">{(labelHeight/25.4).toFixed(1)}″</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-zinc-500 dark:text-zinc-400 font-semibold">Printer Mode</label>
+                    <select
+                      value={pdfMode}
+                      onChange={(e) => setPdfMode(e.target.value as any)}
+                      className="h-8 w-full rounded-lg border border-zinc-300 px-1 font-mono text-[10.5px] font-semibold dark:border-zinc-700 dark:bg-zinc-900 mt-0.5"
+                    >
+                      <option value="single">1-Up Single Roll</option>
+                      <option value="4x6">Giant Roll / Full Page</option>
+                      <option value="thermal2up">2-Up Thermal Roll</option>
+                      <option value="4x6_grid">4×6 Sheet Grid</option>
+                      <option value="4x6_2x5">4×6 Sheet (2×5)</option>
+                      <option value="a4">A4 Sheet Grid</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-zinc-500 dark:text-zinc-400 font-semibold">Page Centering</label>
+                    <button
+                      type="button"
+                      onClick={() => setAutoCenter(!autoCenter)}
+                      className={`h-8 w-full rounded-lg border text-[11px] font-bold transition-all mt-0.5 ${
+                        autoCenter
+                          ? "border-indigo-600 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
+                          : "border-zinc-300 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+                      }`}
+                    >
+                      {autoCenter ? "🎯 Auto-Center ON" : " Off (Manual)"}
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="text-zinc-500 dark:text-zinc-400 font-semibold">Border Line</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowBorder(!showBorder)}
+                      className={`h-8 w-full rounded-lg border text-[11px] font-semibold transition-all mt-0.5 ${
+                        showBorder
+                          ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                          : "border-zinc-300 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+                      }`}
+                    >
+                      {showBorder ? "✓ Border ON" : "✕ Border OFF"}
+                    </button>
+                  </div>
                 </div>
+
               </div>
             </div>
+
+            {/* LIVE PDF PREVIEW MODAL VIEW */}
+            {isPreviewing && previewPdfBase64 && (
+              <div className="rounded-xl border-2 border-indigo-400 bg-zinc-900 p-3 shadow-lg space-y-2 animate-in fade-in duration-200">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 pb-2">
+                  <span className="flex items-center gap-2 text-xs font-bold text-indigo-400">
+                    <FileText className="h-4 w-4" />
+                    Live PDF Print Preview — Real-time Output
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleScrollToTop}
+                      className="flex items-center gap-1 text-[11px] font-bold text-indigo-300 hover:text-white bg-indigo-950/80 border border-indigo-700/60 px-2.5 py-1 rounded-lg transition-all"
+                      title="Scroll modal to top controls"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5 text-indigo-400" />
+                      <span>⬆ Scroll to Top Controls</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const blob = base64ToBlob(previewPdfBase64, "application/pdf");
+                        const blobUrl = URL.createObjectURL(blob);
+                        window.open(blobUrl, "_blank");
+                      }}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-zinc-300 hover:text-white bg-zinc-800 px-2.5 py-1 rounded-lg transition-all"
+                      title="Open full PDF preview in new tab"
+                    >
+                      <ExternalLink className="h-3 w-3 text-zinc-400" />
+                      <span>↗ Open Tab</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleFetchPreview}
+                      disabled={isLoadingPreview}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-zinc-300 hover:text-white bg-zinc-800 px-2.5 py-1 rounded-lg transition-all"
+                    >
+                      {isLoadingPreview ? <Loader2 className="h-3 w-3 animate-spin" /> : "🔄 Refresh"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsPreviewing(false)}
+                      className="text-zinc-400 hover:text-white p-1 rounded-lg"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative w-full h-[420px] rounded-lg overflow-hidden bg-zinc-950 border border-zinc-800 flex items-center justify-center">
+                  <iframe
+                    src={`data:application/pdf;base64,${previewPdfBase64}#toolbar=0&navpanes=0`}
+                    className="w-full h-full border-none pointer-events-none"
+                    title="PDF Print Preview"
+                  />
+                </div>
+              </div>
+            )}
 
             {errorMsg && (
               <div className="rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/50 dark:text-red-400">
@@ -1194,21 +1536,44 @@ export function GenerationModal({
               </div>
             )}
 
-            <button
-              onClick={handleGenerate}
-              disabled={isGenerating}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-700 disabled:opacity-50 transition-all"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Building PDF Layout...
-                </>
-              ) : (
-                `Generate ${parseResult.totalLabels.toLocaleString()} Labels PDF`
-              )}
-            </button>
+            {/* ACTION BUTTONS: PREVIEW PDF & GENERATE BATCH */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleFetchPreview}
+                disabled={isLoadingPreview || isGenerating}
+                className="flex-1 flex h-11 items-center justify-center gap-2 rounded-xl border-2 border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-500 font-bold text-xs hover:bg-indigo-100 dark:hover:bg-indigo-900/60 disabled:opacity-50 transition-all shadow-sm"
+              >
+                {isLoadingPreview ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Rendering Preview...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                    👁️ Live PDF Preview
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={handleGenerate}
+                disabled={isGenerating}
+                className="flex-[2] flex h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-700 disabled:opacity-50 transition-all"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Building PDF Layout...
+                  </>
+                ) : (
+                  `Generate ${parseResult.totalLabels.toLocaleString()} Labels PDF`
+                )}
+              </button>
+            </div>
           </div>
+
         )}
       </div>
     </div>
