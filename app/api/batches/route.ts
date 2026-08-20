@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
     }
 
     const mergedPdfOptions: PDFOptions = {
-      mode: pdfOptions?.mode || "single",
+      mode: pdfOptions?.mode || "4x6_2x5",
       labelWidthMm: Number(settings.label_width_mm || 50),
       labelHeightMm: Number(settings.label_height_mm || 25),
       website: pdfOptions?.website || settings.website || "https://runrkids.in/",
@@ -129,6 +129,8 @@ export async function POST(req: NextRequest) {
       a4Columns: pdfOptions?.a4Columns ?? Number(settings.a4_columns || 2),
       a4Rows: pdfOptions?.a4Rows ?? Number(settings.a4_rows || 5),
       barcodeHeightMm: pdfOptions?.barcodeHeightMm ?? Number(settings.barcode_height_mm || 6.5),
+      barcodeRotation: pdfOptions?.barcodeRotation ?? (Number(settings.barcode_rotation || 0) as 0 | 90 | 180 | 270),
+      layoutPreset: pdfOptions?.layoutPreset ?? ((settings.layout_preset || "standard") as any),
     };
 
     // 6. Generate PDF Buffer

@@ -51,7 +51,7 @@ export async function GET(
     }
 
     const url = new URL(req.url);
-    const mode = (url.searchParams.get("mode") as "single" | "a4") || "single";
+    const mode = (url.searchParams.get("mode") as any) || "4x6_2x5";
     const qCols = url.searchParams.get("cols");
     const qRows = url.searchParams.get("rows");
 

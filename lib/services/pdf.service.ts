@@ -11,7 +11,7 @@ export interface LabelItemData {
 }
 
 export interface PDFOptions {
-  mode: "single" | "a4" | "thermal2up";
+  mode: "single" | "a4" | "thermal2up" | "4x6" | "4x6_grid" | "4x6_2x5";
   labelWidthMm?: number;
   labelHeightMm?: number;
   website?: string;
@@ -22,6 +22,8 @@ export interface PDFOptions {
   offsetYmm?: number;
   scalePct?: number;
   barcodeHeightMm?: number;
+  barcodeRotation?: 0 | 90 | 180 | 270;
+  layoutPreset?: "standard" | "barcode_bottom" | "vertical_left" | "vertical_right";
   // A4 specific grid options
   a4MarginTopMm?: number;
   a4MarginLeftMm?: number;
@@ -64,14 +66,23 @@ export class PDFService {
   }
 
   /**
-   * Render a Code 128 barcode image buffer using bwip-js.
+   * Render a Code 128 barcode image buffer using bwip-js with optional rotation.
    */
-  static async generateBarcodeImage(code: string): Promise<string> {
+  static async generateBarcodeImage(
+    code: string,
+    rotation: 0 | 90 | 180 | 270 = 0
+  ): Promise<string> {
+    let rotCode: "N" | "R" | "I" | "L" = "N";
+    if (rotation === 90) rotCode = "R";
+    else if (rotation === 180) rotCode = "I";
+    else if (rotation === 270) rotCode = "L";
+
     const pngBuffer = await bwipjs.toBuffer({
       bcid: "code128",
       text: code,
       scale: 4,
       height: 10,
+      rotate: rotCode,
       includetext: false,
       backgroundcolor: "FFFFFF",
     });
@@ -147,7 +158,6 @@ export class PDFService {
   ) {
     let labelFont = 7.2;
     let priceFont = 11.5;
-
     const amountStr = formatAmount(amount); // e.g. "1,020/-"
 
     doc.setFont("helvetica", "bold");
@@ -226,23 +236,178 @@ export class PDFService {
     const labelHeight = options.labelHeightMm || 25;
     const website = options.website || "https://runrkids.in/";
     const currency = options.currency || "INR";
-    const showHri = options.showHri === true; // Default OFF to hide barcode number in PDF
-    const showBorder = options.showBorder !== false; // Default ON
+    const showHri = options.showHri === true;
+    const showBorder = options.showBorder !== false;
     const offsetX = options.offsetXmm || 0;
     const offsetY = options.offsetYmm || 0;
+    const barcodeRotation = options.barcodeRotation || 0;
+    const layoutPreset = options.layoutPreset || "standard";
 
-    // Pre-generate barcode base64 images
+    // Pre-generate barcode base64 images with exact requested rotation
     const barcodeImages: Record<string, string> = {};
     for (const item of items) {
       if (!barcodeImages[item.barcode]) {
-        barcodeImages[item.barcode] = await this.generateBarcodeImage(item.barcode);
+        barcodeImages[item.barcode] = await this.generateBarcodeImage(item.barcode, barcodeRotation);
       }
     }
 
     const template = this.getDefaultTemplate();
 
-    if (options.mode === "single") {
-      // 50 x 25 mm Landscape PDF (1 label per page)
+    if (options.mode === "4x6_2x5") {
+      // 4" x 6" Sheet (2 Cols x 5 Rows = 10 Labels per Page, balanced margins & gaps)
+      const pageW = 101.6;
+      const pageH = 152.4;
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: [pageW, pageH],
+      });
+
+      const columns = 2;
+      const rows = 5;
+      const lWidth = 47.0;
+      const lHeight = 23.5; // Reduced height per user request
+      const gapX = 2.6;
+      const gapY = 4.0;
+
+      // Auto-calculate exact centered margins for 101.6mm x 152.4mm sheet
+      const marginLeft = (pageW - (columns * lWidth + (columns - 1) * gapX)) / 2; // 2.5mm
+      const marginTop = (pageH - (rows * lHeight + (rows - 1) * gapY)) / 2; // 9.4mm
+
+      const labelsPerPage = columns * rows; // 10
+      let labelIdx = 0;
+
+      for (let i = 0; i < items.length; i++) {
+        if (i > 0 && i % labelsPerPage === 0) {
+          doc.addPage([pageW, pageH], "portrait");
+          labelIdx = 0;
+        }
+
+        const col = labelIdx % columns;
+        const row = Math.floor(labelIdx / columns);
+
+        const x = marginLeft + col * (lWidth + gapX) + offsetX;
+        const y = marginTop + row * (lHeight + gapY) + offsetY;
+
+        const item = items[i];
+        const bg = barcodeImages[item.barcode];
+
+        this.renderSingleLabelAt(
+          doc,
+          item,
+          bg,
+          x,
+          y,
+          lWidth,
+          lHeight,
+          website,
+          currency,
+          showHri,
+          showBorder,
+          template,
+          layoutPreset,
+          barcodeRotation
+        );
+        labelIdx++;
+      }
+
+      return new Uint8Array(doc.output("arraybuffer"));
+    } else if (options.mode === "4x6_grid") {
+      // 4" x 6" Sheet Multi-Label Grid (2 Cols x 6 Rows = 12 Labels per Page, balanced margins & gaps)
+      const pageW = 101.6;
+      const pageH = 152.4;
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: [pageW, pageH],
+      });
+
+      const columns = options.a4Columns ?? 2;
+      const rows = options.a4Rows ?? 6;
+      const lWidth = 47.0;
+      const lHeight = 23.5;
+      const gapX = 2.6;
+      const gapY = 1.5;
+
+      // Auto-calculate exact centered margins for 101.6mm x 152.4mm sheet
+      const marginLeft = (pageW - (columns * lWidth + (columns - 1) * gapX)) / 2; // 2.5mm
+      const marginTop = (pageH - (rows * lHeight + (rows - 1) * gapY)) / 2; // 3.7mm
+
+      const labelsPerPage = columns * rows;
+      let labelIdx = 0;
+
+      for (let i = 0; i < items.length; i++) {
+        if (i > 0 && i % labelsPerPage === 0) {
+          doc.addPage([pageW, pageH], "portrait");
+          labelIdx = 0;
+        }
+
+        const col = labelIdx % columns;
+        const row = Math.floor(labelIdx / columns);
+
+        const x = marginLeft + col * (lWidth + gapX) + offsetX;
+        const y = marginTop + row * (lHeight + gapY) + offsetY;
+
+        const item = items[i];
+        const bg = barcodeImages[item.barcode];
+
+        this.renderSingleLabelAt(
+          doc,
+          item,
+          bg,
+          x,
+          y,
+          lWidth,
+          lHeight,
+          website,
+          currency,
+          showHri,
+          showBorder,
+          template,
+          layoutPreset,
+          barcodeRotation
+        );
+        labelIdx++;
+      }
+
+      return new Uint8Array(doc.output("arraybuffer"));
+    } else if (options.mode === "4x6") {
+      const w46 = options.labelWidthMm || 101.6;
+      const h46 = options.labelHeightMm || 152.4;
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: [w46, h46],
+      });
+
+      for (let i = 0; i < items.length; i++) {
+        if (i > 0) doc.addPage([w46, h46], "portrait");
+        const item = items[i];
+        const bg = barcodeImages[item.barcode];
+
+        this.renderSingleLabelAt(
+          doc,
+          item,
+          bg,
+          offsetX,
+          offsetY,
+          w46,
+          h46,
+          website,
+          currency,
+          showHri,
+          showBorder,
+          template,
+          layoutPreset,
+          barcodeRotation
+        );
+      }
+
+      return new Uint8Array(doc.output("arraybuffer"));
+    } else if (options.mode === "single") {
       const doc = new jsPDF({
         orientation: "landscape",
         unit: "mm",
@@ -266,7 +431,9 @@ export class PDFService {
           currency,
           showHri,
           showBorder,
-          template
+          template,
+          layoutPreset,
+          barcodeRotation
         );
       }
 
@@ -279,9 +446,8 @@ export class PDFService {
 
       return new Uint8Array(doc.output("arraybuffer"));
     } else if (options.mode === "thermal2up") {
-      // 2-Up Thermal Roll Paper (104 mm x 25 mm continuous roll row - 2 labels side-by-side per page/row)
       const gapX = options.a4GapXMm ?? 4;
-      const rollWidth = labelWidth * 2 + gapX; // 104mm
+      const rollWidth = labelWidth * 2 + gapX;
 
       const doc = new jsPDF({
         orientation: "landscape",
@@ -307,7 +473,9 @@ export class PDFService {
           currency,
           showHri,
           showBorder,
-          template
+          template,
+          layoutPreset,
+          barcodeRotation
         );
 
         // Right Label (if exists in pair)
@@ -326,7 +494,9 @@ export class PDFService {
             currency,
             showHri,
             showBorder,
-            template
+            template,
+            layoutPreset,
+            barcodeRotation
           );
         }
       }
@@ -377,7 +547,9 @@ export class PDFService {
           currency,
           showHri,
           showBorder,
-          template
+          template,
+          layoutPreset,
+          barcodeRotation
         );
         labelIdx++;
       }
@@ -387,7 +559,7 @@ export class PDFService {
   }
 
   /**
-   * Render single label at specific (x, y) physical millimeter coordinates matching exact NEW DESIGN.
+   * Render single label at specific (x, y) physical millimeter coordinates matching layoutPreset and barcodeRotation.
    */
   private static renderSingleLabelAt(
     doc: jsPDF,
@@ -401,78 +573,294 @@ export class PDFService {
     currency: string,
     showHri: boolean,
     showBorder: boolean,
-    tmpl: LabelTemplateConfig
+    tmpl: LabelTemplateConfig,
+    layoutPreset: "standard" | "barcode_bottom" | "vertical_left" | "vertical_right" = "standard",
+    barcodeRotation: 0 | 90 | 180 | 270 = 0
   ) {
     // 0. OUTER ROUNDED BORDER BOX
     if (showBorder) {
-      doc.setLineWidth(0.3); // Crisp 0.3mm border
+      doc.setLineWidth(w > 80 ? 0.8 : 0.3);
       doc.setDrawColor(0, 0, 0);
       doc.roundedRect(x, y, w, h, 1.2, 1.2);
     }
 
-    const marginX = 1.8;
-    const contentW = w - marginX * 2; // 46.4mm width
+    if (w > 80 && h > 120) {
+      // Single Giant 4" x 6" Label Mode (1 Label fills entire 4x6 page)
+      const margin = 4.0;
+      const contentW = w - margin * 2;
 
-    // 1. PRODUCT TITLE (Top Centered)
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(0, 0, 0);
+      // 1. PRODUCT TITLE
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(16.0);
+      let splitName = doc.splitTextToSize(item.productName.toUpperCase(), contentW - 8);
+      if (splitName.length > 2) splitName = splitName.slice(0, 2);
+      doc.text(splitName, x + w / 2, y + 18.0, { align: "center" });
 
-    let fontSize = 6.5;
-    doc.setFontSize(fontSize);
-    let splitName = doc.splitTextToSize(item.productName.toUpperCase(), contentW);
+      // 2. GIANT BARCODE
+      const isVertical = barcodeRotation === 90 || barcodeRotation === 270;
+      const bcW = isVertical ? 22.0 : Math.min(85.0, contentW - 10);
+      const bcH = isVertical ? 50.0 : 32.0;
+      const bcX = x + (w - bcW) / 2;
+      const bcY = y + 26.0;
+      doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
 
-    if (splitName.length > 2) {
-      fontSize = 5.2;
-      doc.setFontSize(fontSize);
-      splitName = doc.splitTextToSize(item.productName.toUpperCase(), contentW).slice(0, 2);
-      if (splitName[1] && splitName[1].length > 3) {
-        splitName[1] = splitName[1].substring(0, splitName[1].length - 3) + "...";
+      // 3. HRI NUMBER
+      if (showHri) {
+        doc.setFont("courier", "bold");
+        doc.setFontSize(12.0);
+        const spacedBarcode = item.barcode.split("").join(" ");
+        doc.text(spacedBarcode, x + w / 2, y + 64.0, { align: "center" });
       }
+
+      // 4. SALE PRICE HERO
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16.0);
+      const labelW = doc.getTextWidth("SALE PRICE: ");
+      doc.setFontSize(26.0);
+      const amountStr = formatAmount(item.salesPrice);
+      const priceW = doc.getTextWidth(amountStr);
+      const startX = x + w / 2 - (labelW + priceW) / 2;
+
+      doc.setFontSize(16.0);
+      doc.text("SALE PRICE: ", startX, y + 84.0);
+      doc.setFontSize(26.0);
+      doc.text(amountStr, startX + labelW, y + 84.0);
+
+      // Separator 1
+      doc.setLineWidth(0.4);
+      doc.setDrawColor(40, 40, 40);
+      doc.line(x + margin + 4, y + 92.0, x + w - margin - 4, y + 92.0);
+
+      // 5. MRP SECTION
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16.0);
+      doc.text(`MRP: ${formatAmount(item.mrp)}`, x + w / 2, y + 108.0, { align: "center" });
+
+      // Separator 2
+      doc.line(x + margin + 4, y + 116.0, x + w - margin - 4, y + 116.0);
+
+      // 6. FOOTER ROW
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11.0);
+      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, x + margin + 6, y + 138.0);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10.0);
+      doc.text(website, x + w - margin - 6, y + 138.0, { align: "right" });
+
+      return;
     }
 
-    // Baseline for Title Line 1: y + 2.8mm
-    doc.text(splitName, x + w / 2, y + 2.8, { align: "center" });
+    const marginX = 1.8;
 
-    // 2. BARCODE IMAGE (Centered below title)
-    const bcW = Math.min(38.0, contentW);
-    const bcH = 4.8; // 4.8mm tall
-    const bcX = x + (w - bcW) / 2;
-    const bcY = y + 3.8;
+    if (layoutPreset === "vertical_left") {
+      // 1. Barcode on Left side (Vertical 90° / 270°)
+      const bcW = 6.0;
+      const bcH = Math.min(21.0, h - 3.0);
+      const bcX = x + 1.2;
+      const bcY = y + (h - bcH) / 2;
+      doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
 
-    doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
+      // Vertical Separator Line
+      doc.setLineWidth(0.12);
+      doc.setDrawColor(60, 60, 60);
+      doc.line(x + 8.2, y + 1.5, x + 8.2, y + h - 1.5);
 
-    // 3. HRI NUMBER (Spaced code string e.g. 0 0 0 0 0 1 2 3 centered below barcode)
-    if (showHri) {
-      doc.setFont("courier", "bold");
+      // Right content area
+      const rx = x + 8.8;
+      const rw = w - 9.8;
+      const rCenterX = rx + rw / 2;
+
+      // Product Title
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.0);
+      let splitName = doc.splitTextToSize(item.productName.toUpperCase(), rw);
+      if (splitName.length > 2) splitName = splitName.slice(0, 2);
+      doc.text(splitName, rCenterX, y + 2.8, { align: "center" });
+
+      // Sale Price Hero
+      this.renderSalePriceHero(doc, item.salesPrice, rCenterX, y + 9.0, rw);
+
+      // Separator 1
+      doc.setLineWidth(0.12);
+      doc.setDrawColor(40, 40, 40);
+      doc.line(rx, y + 11.2, rx + rw, y + 11.2);
+
+      // MRP
+      this.renderCenteredMrp(doc, item.mrp, rCenterX, y + 15.0, rw);
+
+      // Separator 2
+      doc.line(rx, y + 17.2, rx + rw, y + 17.2);
+
+      // Footer
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(5.0);
+      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, rx, y + 22.0);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(4.8);
+      doc.text(website, rx + rw, y + 22.0, { align: "right" });
+    } else if (layoutPreset === "vertical_right") {
+      // Barcode on Right side (Vertical 90° / 270°)
+      const bcW = 6.0;
+      const bcH = Math.min(21.0, h - 3.0);
+      const bcX = x + w - 7.2;
+      const bcY = y + (h - bcH) / 2;
+      doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
+
+      // Vertical Separator Line
+      doc.setLineWidth(0.12);
+      doc.setDrawColor(60, 60, 60);
+      doc.line(x + w - 8.2, y + 1.5, x + w - 8.2, y + h - 1.5);
+
+      // Left content area
+      const lx = x + 1.5;
+      const lw = w - 10.0;
+      const lCenterX = lx + lw / 2;
+
+      // Product Title
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.0);
+      let splitName = doc.splitTextToSize(item.productName.toUpperCase(), lw);
+      if (splitName.length > 2) splitName = splitName.slice(0, 2);
+      doc.text(splitName, lCenterX, y + 2.8, { align: "center" });
+
+      // Sale Price Hero
+      this.renderSalePriceHero(doc, item.salesPrice, lCenterX, y + 9.0, lw);
+
+      // Separator 1
+      doc.setLineWidth(0.12);
+      doc.setDrawColor(40, 40, 40);
+      doc.line(lx, y + 11.2, lx + lw, y + 11.2);
+
+      // MRP
+      this.renderCenteredMrp(doc, item.mrp, lCenterX, y + 15.0, lw);
+
+      // Separator 2
+      doc.line(lx, y + 17.2, lx + lw, y + 17.2);
+
+      // Footer
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(5.0);
+      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, lx, y + 22.0);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(4.8);
+      doc.text(website, lx + lw, y + 22.0, { align: "right" });
+    } else if (layoutPreset === "barcode_bottom") {
+      const contentW = w - marginX * 2;
+
+      // 1. Title at top (Auto-Scaled)
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0, 0, 0);
+
+      const titleStr = item.productName.toUpperCase();
+      let fontSize = 6.5;
+      doc.setFontSize(fontSize);
+      let textW = doc.getTextWidth(titleStr);
+
+      while (textW > contentW && fontSize > 4.0) {
+        fontSize -= 0.15;
+        doc.setFontSize(fontSize);
+        textW = doc.getTextWidth(titleStr);
+      }
+
+      doc.text(titleStr, x + w / 2, y + 2.8, { align: "center" });
+
+      // 2. SALE PRICE HERO
+      this.renderSalePriceHero(doc, item.salesPrice, x + w / 2, y + 6.5, contentW);
+
+      // Separator 1
+      doc.setLineWidth(0.12);
+      doc.setDrawColor(40, 40, 40);
+      doc.line(x + marginX, y + 7.8, x + w - marginX, y + 7.8);
+
+      // 3. MRP
+      this.renderCenteredMrp(doc, item.mrp, x + w / 2, y + 10.2, contentW);
+
+      // Separator 2
+      doc.line(x + marginX, y + 11.4, x + w - marginX, y + 11.4);
+
+      // 4. Barcode at bottom
+      const isVertical = barcodeRotation === 90 || barcodeRotation === 270;
+      const bcW = isVertical ? 5.5 : Math.min(38.0, contentW);
+      const bcH = isVertical ? 9.5 : 7.0;
+      const bcX = x + (w - bcW) / 2;
+      const bcY = y + 12.0;
+      doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
+
+      // 5. Footer
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(5.5);
-      const spacedBarcode = item.barcode.split("").join(" ");
-      doc.text(spacedBarcode, x + w / 2, y + 10.1, { align: "center" });
+      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, x + marginX, y + 21.2);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(5.8);
+      doc.text(website, x + w - marginX, y + 21.2, { align: "right" });
+    } else {
+      // "standard" preset (Barcode at top centered)
+      const contentW = w - marginX * 2;
+
+      // 1. PRODUCT TITLE (Top Centered - Auto-Scaled)
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0, 0, 0);
+
+      const titleStr = item.productName.toUpperCase();
+      let fontSize = 6.5;
+      doc.setFontSize(fontSize);
+      let textW = doc.getTextWidth(titleStr);
+
+      while (textW > contentW && fontSize > 4.0) {
+        fontSize -= 0.15;
+        doc.setFontSize(fontSize);
+        textW = doc.getTextWidth(titleStr);
+      }
+
+      doc.text(titleStr, x + w / 2, y + 2.5, { align: "center" });
+
+      // 2. BARCODE IMAGE (Moved down for clean top spacing)
+      const isVertical = barcodeRotation === 90 || barcodeRotation === 270;
+      const bcW = isVertical ? 5.5 : Math.min(38.0, contentW);
+      const bcH = isVertical ? 8.5 : 4.4;
+      const bcX = x + (w - bcW) / 2;
+      const bcY = y + 4.2;
+
+      doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
+
+      // 3. HRI NUMBER
+      if (showHri) {
+        doc.setFont("courier", "bold");
+        doc.setFontSize(5.5);
+        const spacedBarcode = item.barcode.split("").join(" ");
+        doc.text(spacedBarcode, x + w / 2, y + 9.6, { align: "center" });
+      }
+
+      // 4. SALE PRICE HERO SECTION
+      this.renderSalePriceHero(doc, item.salesPrice, x + w / 2, y + 13.5, contentW);
+
+      // 5. HORIZONTAL SEPARATOR LINE #1
+      doc.setLineWidth(0.12);
+      doc.setDrawColor(40, 40, 40);
+      doc.line(x + marginX, y + 14.7, x + w - marginX, y + 14.7);
+
+      // 6. MRP SECTION
+      this.renderCenteredMrp(doc, item.mrp, x + w / 2, y + 17.2, contentW);
+
+      // 7. HORIZONTAL SEPARATOR LINE #2
+      doc.setLineWidth(0.12);
+      doc.setDrawColor(40, 40, 40);
+      doc.line(x + marginX, y + 18.4, x + w - marginX, y + 18.4);
+
+      // 8. FOOTER ROW (Positioned cleanly above bottom border line)
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(5.5);
+      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, x + marginX, y + 21.2);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(5.8);
+      doc.text(website, x + w - marginX, y + 21.2, { align: "right" });
     }
-
-    // 4. SALE PRICE HERO SECTION (Centered, Giant Bold Numbers)
-    this.renderSalePriceHero(doc, item.salesPrice, x + w / 2, y + 14.5, contentW);
-
-    // 5. HORIZONTAL SEPARATOR LINE #1 (Below SALE PRICE)
-    doc.setLineWidth(0.12);
-    doc.setDrawColor(40, 40, 40);
-    doc.line(x + marginX, y + 15.8, x + w - marginX, y + 15.8);
-
-    // 6. MRP SECTION (Centered)
-    this.renderCenteredMrp(doc, item.mrp, x + w / 2, y + 18.6, contentW);
-
-    // 7. HORIZONTAL SEPARATOR LINE #2 (Below MRP)
-    doc.setLineWidth(0.12);
-    doc.setDrawColor(40, 40, 40);
-    doc.line(x + marginX, y + 19.9, x + w - marginX, y + 19.9);
-
-    // 8. FOOTER ROW (Bottom: Left NET QTY | Right Website)
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(5.5);
-    doc.text(`NET QTY: ${item.netQuantity || "1U"}`, x + marginX, y + 23.2);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(5.0);
-    doc.text(website, x + w - marginX, y + 23.2, { align: "right" });
   }
 
   /**

@@ -190,24 +190,34 @@ export function BatchHistoryTable() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          {/* Print 2-Col Sticker Sheet Direct */}
+                          {/* Print 2-Up Thermal Roll Direct */}
                           <button
-                            onClick={() => handlePrintBatchDirectly(b.id, "a4")}
-                            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300"
-                            title="Print 2-Column Sticker Sheet directly"
+                            onClick={() => handlePrintBatchDirectly(b.id, "single")}
+                            className="inline-flex items-center gap-1 rounded-md border border-indigo-300 bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-300"
+                            title="Print Thermal 2-Up Roll directly"
                           >
-                            <Printer className="h-3 w-3" /> Print Sticker Sheet
+                            <Printer className="h-3 w-3" /> Print Labels
                           </button>
 
                           {/* Download PDF File */}
                           <a
-                            href={`/api/batches/${b.id}/pdf?mode=a4&cols=2&rows=5`}
+                            href={`/api/batches/${b.id}/pdf?mode=thermal2up`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                            title="Download A4 2-Column Sticker Sheet PDF"
+                            title="Download Thermal 2-Up Roll PDF"
                           >
-                            <Download className="h-3 w-3" /> Download PDF
+                            <Download className="h-3 w-3 text-indigo-500" /> PDF
+                          </a>
+
+                          {/* Download Direct TSPL (.prn) for TSC Printer */}
+                          <a
+                            href={`/api/batches/${b.id}/tspl?mode=thermal2up`}
+                            download={`${b.batchNumber}.prn`}
+                            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300"
+                            title="Download TSPL (.prn) raw command file for TSC Barcode Printers"
+                          >
+                            <Download className="h-3 w-3 text-amber-600" /> TSPL (.prn)
                           </a>
                         </div>
                       </td>

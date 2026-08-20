@@ -14,6 +14,8 @@ export function SettingsForm() {
     printer_scale_pct: "100",
     currency: "INR",
     barcode_height_mm: "6.5",
+    barcode_rotation: "0",
+    layout_preset: "standard",
     a4_margin_top_mm: "10",
     a4_margin_left_mm: "12",
     a4_gap_x_mm: "4",
@@ -136,7 +138,51 @@ export function SettingsForm() {
         </div>
       </div>
 
-      {/* 2. Default Sticker Sheet Grid Setup */}
+      {/* 2. Barcode Orientation & Layout Template Defaults */}
+      <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex items-center gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+          <Sliders className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+          <h2 className="text-base font-bold text-zinc-900 dark:text-white">
+            Default Barcode Orientation & Layout Template
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              Default Layout Preset
+            </label>
+            <select
+              value={settings.layout_preset || "standard"}
+              onChange={(e) => handleChange("layout_preset", e.target.value)}
+              className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+            >
+              <option value="standard">Standard (Top Horizontal Barcode)</option>
+              <option value="barcode_bottom">Barcode Bottom (Horizontal Barcode at Bottom)</option>
+              <option value="vertical_left">Vertical Left (Rotated Barcode on Left Side)</option>
+              <option value="vertical_right">Vertical Right (Rotated Barcode on Right Side)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              Default Barcode Rotation Angle
+            </label>
+            <select
+              value={settings.barcode_rotation || "0"}
+              onChange={(e) => handleChange("barcode_rotation", e.target.value)}
+              className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+            >
+              <option value="0">0° (Normal Horizontal)</option>
+              <option value="90">90° (Vertical Right Clockwise)</option>
+              <option value="180">180° (Inverted Upside-Down)</option>
+              <option value="270">270° (Vertical Left Counter-Clockwise)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Default Sticker Sheet Grid Setup */}
       <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-center gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
           <LayoutGrid className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
@@ -271,6 +317,33 @@ export function SettingsForm() {
               onChange={(e) => handleChange("printer_scale_pct", e.target.value)}
               className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
             />
+          </div>
+        </div>
+
+        {/* TSC PRINTER HARDWARE SETUP & CALIBRATION GUIDE */}
+        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <h4 className="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-2">
+            <Sliders className="h-4 w-4 text-amber-600" />
+            TSC Thermal Printer Driver & Calibration Guide (Fixes Blank Paper Feeding)
+          </h4>
+          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] leading-relaxed">
+            <div className="space-y-1">
+              <span className="font-semibold text-amber-900 dark:text-amber-300">1. Windows Printer Preferences:</span>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>Go to Control Panel → Devices and Printers → TSC Printer Preferences.</li>
+                <li>Create Stock: <strong>Width 104.0mm, Height 25.0mm</strong> (for 2-Up roll).</li>
+                <li>Set Type: <strong>Labels with Gaps</strong> (Gap height 2.0mm or 3.0mm).</li>
+              </ul>
+            </div>
+            <div className="space-y-1">
+              <span className="font-semibold text-amber-900 dark:text-amber-300">2. Chrome Print Dialog Settings:</span>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>Paper Size: Select <strong>104 × 25 mm</strong> (Do NOT select A4).</li>
+                <li>Scale: Select <strong>Actual Size (100%)</strong>.</li>
+                <li>Margins: Select <strong>None</strong>.</li>
+                <li>Calibrate Sensor: Turn printer ON while holding <strong>FEED</strong> button.</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>

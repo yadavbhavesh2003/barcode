@@ -120,6 +120,8 @@ async function initDefaultSettings() {
     printer_scale_pct: "100",
     currency: "INR",
     barcode_height_mm: "8",
+    barcode_rotation: "0",
+    layout_preset: "standard",
     a4_margin_top_mm: "10",
     a4_margin_left_mm: "10",
     a4_gap_x_mm: "2",
