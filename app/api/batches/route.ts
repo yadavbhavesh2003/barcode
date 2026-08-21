@@ -155,13 +155,13 @@ export async function POST(req: NextRequest) {
     }
 
     const mergedPdfOptions: PDFOptions = {
-      mode: pdfOptions?.mode || "4x6_2x5",
-      labelWidthMm: pdfOptions?.labelWidthMm !== undefined ? Number(pdfOptions.labelWidthMm) : Number(settings.label_width_mm || 50),
+      mode: pdfOptions?.mode || "single",
+      labelWidthMm: pdfOptions?.labelWidthMm !== undefined ? Number(pdfOptions.labelWidthMm) : Number(settings.label_width_mm || 35.56),
       labelHeightMm: pdfOptions?.labelHeightMm !== undefined ? Number(pdfOptions.labelHeightMm) : Number(settings.label_height_mm || 25),
       website: pdfOptions?.website || settings.website || "https://runrkids.in/",
       currency: settings.currency || "INR",
-      showHri: pdfOptions?.showHri === true, // Default false per user request
-      showBorder: pdfOptions?.showBorder !== false, // Default true
+      showHri: pdfOptions?.showHri === true,
+      showBorder: pdfOptions?.showBorder === true, // Default false (border off by default)
       offsetXmm: Number(settings.printer_offset_x_mm || 0),
       offsetYmm: Number(settings.printer_offset_y_mm || 0),
       scalePct: Number(settings.printer_scale_pct || 100),

@@ -233,12 +233,12 @@ export class PDFService {
     // Validate A4 grid bounds if in A4 mode
     this.validateA4Bounds(options);
 
-    const labelWidth = options.labelWidthMm || 50;
+    const labelWidth = options.labelWidthMm || 35.56;
     const labelHeight = options.labelHeightMm || 25;
     const website = options.website || "https://runrkids.in/";
     const currency = options.currency || "INR";
     const showHri = options.showHri === true;
-    const showBorder = options.showBorder !== false;
+    const showBorder = options.showBorder === true; // Default false (border off by default)
     const offsetX = options.offsetXmm || 0;
     const offsetY = options.offsetYmm || 0;
     const barcodeRotation = options.barcodeRotation || 0;
@@ -608,17 +608,17 @@ export class PDFService {
       // 2. GIANT BARCODE
       const isVertical = barcodeRotation === 90 || barcodeRotation === 270;
       const bcW = isVertical ? 22.0 * (w / 101.6) : Math.min(85.0 * (w / 101.6), contentW - 10);
-      const bcH = (isVertical ? 50.0 : 32.0) * sy;
+      const bcH = (isVertical ? 50.0 : (showHri ? 26.0 : 32.0)) * sy;
       const bcX = x + (w - bcW) / 2;
       const bcY = y + 26.0 * sy;
       doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
 
       // 3. HRI NUMBER
       if (showHri) {
-        doc.setFont("courier", "bold");
-        doc.setFontSize(Math.min(12.0, Math.max(8.0, 12.0 * (w / 101.6))));
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(Math.min(10.0, Math.max(7.0, 10.0 * (w / 101.6))));
         const spacedBarcode = item.barcode.split("").join(" ");
-        doc.text(spacedBarcode, x + w / 2, y + 64.0 * sy, { align: "center" });
+        doc.text(spacedBarcode, x + w / 2, bcY + bcH + 5.5 * sy, { align: "center" });
       }
 
       // 4. SALE PRICE HERO
@@ -829,47 +829,48 @@ export class PDFService {
 
       doc.text(titleStr, x + w / 2, y + 2.5, { align: "center" });
 
-      // 2. BARCODE IMAGE (Moved down for clean top spacing)
+      // 2. BARCODE IMAGE & HRI NUMBER
       const isVertical = barcodeRotation === 90 || barcodeRotation === 270;
-      const bcW = isVertical ? 5.5 : Math.min(38.0, contentW);
-      const bcH = isVertical ? 8.5 : 4.4;
+      const bcW = isVertical ? 5.5 : Math.min(32.0, contentW);
+      const bcH = isVertical ? 8.5 : (showHri ? 3.6 : 4.6);
       const bcX = x + (w - bcW) / 2;
-      const bcY = y + 4.2;
+      const bcY = y + 3.6;
 
       doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
 
-      // 3. HRI NUMBER
+      // 3. HRI NUMBER (Properly positioned below the barcode bars with zero overlap)
       if (showHri) {
-        doc.setFont("courier", "bold");
-        doc.setFontSize(5.5);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(5.0);
+        doc.setTextColor(0, 0, 0);
         const spacedBarcode = item.barcode.split("").join(" ");
-        doc.text(spacedBarcode, x + w / 2, y + 9.6, { align: "center" });
+        doc.text(spacedBarcode, x + w / 2, y + 8.4, { align: "center" });
       }
 
       // 4. SALE PRICE HERO SECTION
-      this.renderSalePriceHero(doc, item.salesPrice, x + w / 2, y + 13.5, contentW);
+      this.renderSalePriceHero(doc, item.salesPrice, x + w / 2, y + 12.6, contentW);
 
       // 5. HORIZONTAL SEPARATOR LINE #1
       doc.setLineWidth(0.12);
       doc.setDrawColor(40, 40, 40);
-      doc.line(x + marginX, y + 14.7, x + w - marginX, y + 14.7);
+      doc.line(x + marginX, y + 13.8, x + w - marginX, y + 13.8);
 
       // 6. MRP SECTION
-      this.renderCenteredMrp(doc, item.mrp, x + w / 2, y + 17.2, contentW);
+      this.renderCenteredMrp(doc, item.mrp, x + w / 2, y + 16.4, contentW);
 
       // 7. HORIZONTAL SEPARATOR LINE #2
       doc.setLineWidth(0.12);
       doc.setDrawColor(40, 40, 40);
-      doc.line(x + marginX, y + 18.4, x + w - marginX, y + 18.4);
+      doc.line(x + marginX, y + 17.6, x + w - marginX, y + 17.6);
 
-      // 8. FOOTER ROW (Positioned cleanly above bottom border line)
+      // 8. FOOTER ROW
       doc.setFont("helvetica", "bold");
       doc.setFontSize(5.5);
-      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, x + marginX, y + 21.2);
+      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, x + marginX, y + 20.8);
 
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(5.8);
-      doc.text(website, x + w - marginX, y + 21.2, { align: "right" });
+      doc.setFontSize(5.5);
+      doc.text(website, x + w - marginX, y + 20.8, { align: "right" });
     }
   }
 

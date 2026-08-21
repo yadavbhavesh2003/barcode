@@ -7,8 +7,10 @@ export function SettingsForm() {
   const [settings, setSettings] = useState<Record<string, string>>({
     website: "https://runrkids.in/",
     net_quantity: "1U",
-    label_width_mm: "50",
+    label_width_mm: "35.5",
     label_height_mm: "25",
+    show_border: "false",
+    show_hri: "false",
     printer_offset_x_mm: "0",
     printer_offset_y_mm: "0",
     printer_scale_pct: "100",
@@ -166,17 +168,29 @@ export function SettingsForm() {
 
           <div>
             <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-              Default Barcode Rotation Angle
+              Default Barcode Number (HRI text)
             </label>
             <select
-              value={settings.barcode_rotation || "0"}
-              onChange={(e) => handleChange("barcode_rotation", e.target.value)}
+              value={settings.show_hri || "false"}
+              onChange={(e) => handleChange("show_hri", e.target.value)}
               className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
             >
-              <option value="0">0° (Normal Horizontal)</option>
-              <option value="90">90° (Vertical Right Clockwise)</option>
-              <option value="180">180° (Inverted Upside-Down)</option>
-              <option value="270">270° (Vertical Left Counter-Clockwise)</option>
+              <option value="false">Disabled (Clean barcode without number text - Default)</option>
+              <option value="true">Enabled (Print number text below barcode)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              Default Outer Border Line
+            </label>
+            <select
+              value={settings.show_border || "false"}
+              onChange={(e) => handleChange("show_border", e.target.value)}
+              className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+            >
+              <option value="false">Disabled (No outer border outline - Default)</option>
+              <option value="true">Enabled (Draw outer border outline)</option>
             </select>
           </div>
         </div>

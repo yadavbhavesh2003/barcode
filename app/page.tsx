@@ -15,6 +15,8 @@ export default function Home() {
   const [selectedRow, setSelectedRow] = useState<any | null>(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [summaryMetrics, setSummaryMetrics] = useState<any | null>(null);
+  const [showHri, setShowHri] = useState(false);
+  const [showBorder, setShowBorder] = useState(false);
 
   // Store original Excel quantities so user can switch modes seamlessly
   const [originalExcelRows, setOriginalExcelRows] = useState<any[]>([]);
@@ -271,6 +273,10 @@ export default function Home() {
                 salesPrice={selectedRow?.salesPrice || 1020}
                 netQuantity={selectedRow?.netQuantity || "1U"}
                 sampleBarcode={selectedRow?.customBarcode || "14378278"}
+                showHri={showHri}
+                showBorder={showBorder}
+                onToggleShowHri={setShowHri}
+                onToggleShowBorder={setShowBorder}
               />
             </div>
           </div>
@@ -280,6 +286,8 @@ export default function Home() {
             isOpen={isConfirmModalOpen}
             onClose={() => setIsConfirmModalOpen(false)}
             parseResult={parseResult}
+            initialShowHri={showHri}
+            initialShowBorder={showBorder}
             onSuccess={() => {
               fetchSummary();
             }}

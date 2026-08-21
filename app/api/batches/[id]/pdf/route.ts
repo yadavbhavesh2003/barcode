@@ -51,18 +51,18 @@ export async function GET(
     }
 
     const url = new URL(req.url);
-    const mode = (url.searchParams.get("mode") as any) || "4x6_2x5";
+    const mode = (url.searchParams.get("mode") as any) || "single";
     const qCols = url.searchParams.get("cols");
     const qRows = url.searchParams.get("rows");
 
     const pdfOptions: PDFOptions = {
       mode,
-      labelWidthMm: Number(settings.label_width_mm || 50),
+      labelWidthMm: Number(settings.label_width_mm || 35.56),
       labelHeightMm: Number(settings.label_height_mm || 25),
       website: settings.website || "https://runrkids.in/",
       currency: settings.currency || "INR",
-      showHri: url.searchParams.get("hri") === "1", // Default false per user request
-      showBorder: url.searchParams.get("border") !== "0",
+      showHri: url.searchParams.get("hri") === "1",
+      showBorder: url.searchParams.get("border") === "1", // Default false (border off)
       offsetXmm: Number(settings.printer_offset_x_mm || 0),
       offsetYmm: Number(settings.printer_offset_y_mm || 0),
       a4MarginTopMm: Number(url.searchParams.get("marginTop") || settings.a4_margin_top_mm || 10),
