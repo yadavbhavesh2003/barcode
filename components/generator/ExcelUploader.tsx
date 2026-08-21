@@ -59,7 +59,7 @@ export function ExcelUploader({ onFileParsed, isLoading, setIsLoading }: ExcelUp
             Upload Products Excel File
           </h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Import product names, MRP, sales price, and label quantities.
+            Import custom barcode (#), item name, HSN/SAC, MRP, sales price, and label quantities.
           </p>
         </div>
 

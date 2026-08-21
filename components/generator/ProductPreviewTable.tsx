@@ -6,11 +6,16 @@ import { formatCurrency } from "@/lib/utils";
 
 interface ParsedProductRow {
   rowIndex: number;
+  customBarcode?: string;
   productName: string;
+  hsn?: string;
   mrp: number;
   salesPrice: number;
   quantity: number;
   netQuantity: string;
+  gstAmount?: number;
+  gstRate?: string;
+  amount?: number;
   isValid: boolean;
   errors: string[];
   warnings: string[];
@@ -21,6 +26,7 @@ interface ProductPreviewTableProps {
   selectedRowIndex: number | null;
   onSelectRow: (row: ParsedProductRow) => void;
   onUpdateRowQuantity: (rowIndex: number, newQty: number) => void;
+  onUpdateRowBarcode?: (rowIndex: number, newBarcode: string) => void;
   onSetAllQuantityToOne: () => void;
 }
 
@@ -29,6 +35,7 @@ export function ProductPreviewTable({
   selectedRowIndex,
   onSelectRow,
   onUpdateRowQuantity,
+  onUpdateRowBarcode,
   onSetAllQuantityToOne,
 }: ProductPreviewTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
@@ -37,9 +44,14 @@ export function ProductPreviewTable({
   const pageSize = 10;
 
   const filteredRows = useMemo(() => {
+    const term = searchTerm.toLowerCase().trim();
     return rows.filter((r) => {
-      const matchesSearch = r.productName.toLowerCase().includes(searchTerm.toLowerCase());
-      if (!matchesSearch) return false;
+      if (term) {
+        const matchesName = r.productName.toLowerCase().includes(term);
+        const matchesBarcode = r.customBarcode ? r.customBarcode.toLowerCase().includes(term) : false;
+        const matchesHsn = r.hsn ? r.hsn.toLowerCase().includes(term) : false;
+        if (!matchesName && !matchesBarcode && !matchesHsn) return false;
+      }
 
       if (statusFilter === "valid") return r.isValid && r.warnings.length === 0;
       if (statusFilter === "errors") return !r.isValid;
@@ -63,7 +75,7 @@ export function ProductPreviewTable({
             Parsed Products Preview ({rows.length})
           </h3>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Click row to preview label. Edit <span className="font-semibold">Qty</span> directly below.
+            Click row to preview label. Custom <span className="font-semibold">Barcode #</span> and <span className="font-semibold">Qty</span> are editable.
           </p>
         </div>
 
@@ -83,13 +95,13 @@ export function ProductPreviewTable({
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-400" />
             <input
               type="text"
-              placeholder="Search product..."
+              placeholder="Search by name, barcode, HSN..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              className="h-9 rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+              className="h-9 w-52 sm:w-64 rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
             />
           </div>
 
@@ -120,19 +132,21 @@ export function ProductPreviewTable({
         <table className="w-full text-left text-xs">
           <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
             <tr>
-              <th className="px-3.5 py-2.5 font-semibold">Row</th>
-              <th className="px-3.5 py-2.5 font-semibold">Product Name</th>
-              <th className="px-3.5 py-2.5 font-semibold">MRP</th>
-              <th className="px-3.5 py-2.5 font-semibold">Sales Price</th>
-              <th className="px-3.5 py-2.5 font-semibold w-24">Qty (Labels)</th>
-              <th className="px-3.5 py-2.5 font-semibold">Net Qty</th>
-              <th className="px-3.5 py-2.5 font-semibold">Status</th>
+              <th className="px-3 py-2.5 font-semibold w-12">Row</th>
+              <th className="px-3 py-2.5 font-semibold w-32"># (Barcode)</th>
+              <th className="px-3.5 py-2.5 font-semibold">Item Name</th>
+              <th className="px-3 py-2.5 font-semibold">HSN</th>
+              <th className="px-3 py-2.5 font-semibold">MRP</th>
+              <th className="px-3 py-2.5 font-semibold">Price/Unit</th>
+              <th className="px-3 py-2.5 font-semibold w-20">Qty</th>
+              <th className="px-3 py-2.5 font-semibold">Net Qty</th>
+              <th className="px-3 py-2.5 font-semibold">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
             {paginatedRows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-zinc-500">
                   No matching products found.
                 </td>
               </tr>
@@ -149,7 +163,20 @@ export function ProductPreviewTable({
                         : "hover:bg-zinc-50/70 dark:hover:bg-zinc-800/40"
                     }`}
                   >
-                    <td className="px-3.5 py-2.5 font-mono text-zinc-400">{r.rowIndex}</td>
+                    <td className="px-3 py-2.5 font-mono text-zinc-400">{r.rowIndex}</td>
+                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        placeholder="Auto 8-digit"
+                        value={r.customBarcode || ""}
+                        onChange={(e) => {
+                          if (onUpdateRowBarcode) {
+                            onUpdateRowBarcode(r.rowIndex, e.target.value);
+                          }
+                        }}
+                        className="h-7 w-28 rounded border border-zinc-200 bg-white px-2 font-mono text-xs font-semibold text-indigo-600 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-indigo-400"
+                      />
+                    </td>
                     <td className="px-3.5 py-2.5 font-medium text-zinc-900 dark:text-white">
                       <div>{r.productName || "<Missing Name>"}</div>
                       {r.errors.length > 0 && (
@@ -163,13 +190,16 @@ export function ProductPreviewTable({
                         </div>
                       )}
                     </td>
-                    <td className="px-3.5 py-2.5 font-mono text-zinc-700 dark:text-zinc-300">
+                    <td className="px-3 py-2.5 font-mono text-zinc-600 dark:text-zinc-400">
+                      {r.hsn || "-"}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-zinc-700 dark:text-zinc-300">
                       {r.mrp ? formatCurrency(r.mrp) : "-"}
                     </td>
-                    <td className="px-3.5 py-2.5 font-mono font-semibold text-zinc-900 dark:text-white">
+                    <td className="px-3 py-2.5 font-mono font-semibold text-zinc-900 dark:text-white">
                       {r.salesPrice ? formatCurrency(r.salesPrice) : "-"}
                     </td>
-                    <td className="px-3.5 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="number"
                         min="1"
@@ -184,10 +214,10 @@ export function ProductPreviewTable({
                         className="h-7 w-16 rounded border border-zinc-300 bg-white px-2 font-mono text-xs font-semibold text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-white"
                       />
                     </td>
-                    <td className="px-3.5 py-2.5 text-zinc-600 dark:text-zinc-400">
+                    <td className="px-3 py-2.5 text-zinc-600 dark:text-zinc-400">
                       {r.netQuantity}
                     </td>
-                    <td className="px-3.5 py-2.5">
+                    <td className="px-3 py-2.5">
                       {!r.isValid ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-950/60 dark:text-red-400">
                           <XCircle className="h-3 w-3" /> Error

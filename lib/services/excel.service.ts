@@ -3,11 +3,16 @@ import { sanitizeExcelValue } from "../utils";
 
 export interface ParsedProductRow {
   rowIndex: number;
+  customBarcode?: string;
   productName: string;
+  hsn?: string;
   mrp: number;
   salesPrice: number;
   quantity: number;
   netQuantity: string;
+  gstAmount?: number;
+  gstRate?: string;
+  amount?: number;
   isValid: boolean;
   errors: string[];
   warnings: string[];
@@ -67,23 +72,71 @@ export class ExcelService {
       const keys = Object.keys(item);
       const getVal = (possibleHeaders: string[]): unknown => {
         for (const ph of possibleHeaders) {
-          const key = keys.find((k) => k.trim().toLowerCase() === ph.toLowerCase());
-          if (key) return item[key];
+          const key = keys.find(
+            (k) => k.trim().toLowerCase().replace(/\s+/g, " ") === ph.toLowerCase().replace(/\s+/g, " ")
+          );
+          if (key && item[key] !== undefined && item[key] !== "") return item[key];
         }
         return undefined;
       };
 
-      // 1. Product Name
-      const rawName = getVal(["Product Name", "ProductName", "Name", "Title", "Item"]);
-      let productName = sanitizeExcelValue(rawName);
-      if (!productName) {
-        errors.push("Product Name is required.");
-      } else if (productName.length > 250) {
-        errors.push("Product Name exceeds maximum allowed length of 250 characters.");
+      // 0. Custom Barcode / Number (# column)
+      const rawBarcode = getVal([
+        "#",
+        "Barcode",
+        "Barcode Number",
+        "Barcode No",
+        "Item Code",
+        "Code",
+        "Custom Barcode",
+        "Item #",
+        "Item No",
+        "SKU",
+      ]);
+      let customBarcode: string | undefined = undefined;
+      if (rawBarcode !== undefined && rawBarcode !== null) {
+        const cleanedCode = String(rawBarcode).trim();
+        if (cleanedCode !== "") {
+          if (cleanedCode.length > 64) {
+            errors.push("Barcode/Code exceeds maximum allowed length of 64 characters.");
+          } else {
+            customBarcode = cleanedCode;
+          }
+        }
       }
 
-      // 2. MRP
-      const rawMrp = getVal(["MRP", "Mrp Price", "Maximum Retail Price", "List Price"]);
+      // 1. Product Name / Item Name
+      const rawName = getVal([
+        "Item name",
+        "Item Name",
+        "Product Name",
+        "ProductName",
+        "Name",
+        "Title",
+        "Item",
+        "Description",
+      ]);
+      let productName = sanitizeExcelValue(rawName);
+      if (!productName) {
+        errors.push("Item name / Product Name is required.");
+      } else if (productName.length > 250) {
+        errors.push("Item name exceeds maximum allowed length of 250 characters.");
+      }
+
+      // 2. HSN / SAC Code
+      const rawHsn = getVal([
+        "HSN/ SAC",
+        "HSN/SAC",
+        "HSN / SAC",
+        "HSN",
+        "SAC",
+        "HSN Code",
+        "HSN/SAC Code",
+      ]);
+      const hsn = rawHsn !== undefined && rawHsn !== null ? String(rawHsn).trim() : undefined;
+
+      // 3. MRP
+      const rawMrp = getVal(["MRP", "Mrp Price", "Maximum Retail Price", "List Price", "M.R.P."]);
       let mrp = 0;
       if (rawMrp === undefined || rawMrp === "") {
         errors.push("MRP is required.");
@@ -96,21 +149,27 @@ export class ExcelService {
         }
       }
 
-      // 3. Sales Price
+      // 4. Sales Price / Price per Unit
       const rawSalesPrice = getVal([
+        "Price/ Unit",
+        "Price/Unit",
+        "Price / Unit",
+        "Price/ unit",
         "Sales Price",
         "Sale Price",
         "Selling Price",
         "Price",
         "Offer Price",
+        "Unit Price",
+        "Rate",
       ]);
       let salesPrice = 0;
       if (rawSalesPrice === undefined || rawSalesPrice === "") {
-        errors.push("Sales Price is required.");
+        errors.push("Price/ Unit (Sales Price) is required.");
       } else {
         const num = Number(String(rawSalesPrice).replace(/[^0-9.]/g, ""));
         if (isNaN(num) || num <= 0) {
-          errors.push("Sales Price must be a number greater than 0.");
+          errors.push("Price/ Unit must be a number greater than 0.");
         } else {
           salesPrice = num;
         }
@@ -118,10 +177,10 @@ export class ExcelService {
 
       // Warning check: Sales Price > MRP
       if (mrp > 0 && salesPrice > 0 && salesPrice > mrp) {
-        warnings.push(`Sales Price (Rs. ${salesPrice}) is greater than MRP (Rs. ${mrp}).`);
+        warnings.push(`Price/Unit (Rs. ${salesPrice}) is greater than MRP (Rs. ${mrp}).`);
       }
 
-      // 4. Quantity
+      // 5. Quantity
       const rawQty = getVal(["Quantity", "Qty", "Count", "Label Count", "Labels"]);
       let quantity = 1;
       if (rawQty !== undefined && rawQty !== "") {
@@ -135,7 +194,27 @@ export class ExcelService {
         }
       }
 
-      // 5. Net Quantity
+      // 6. GST Amount
+      const rawGstAmt = getVal(["GST Amount", "GST Amt", "Tax Amount", "Tax Amt", "GST"]);
+      let gstAmount: number | undefined = undefined;
+      if (rawGstAmt !== undefined && rawGstAmt !== "") {
+        const num = Number(String(rawGstAmt).replace(/[^0-9.]/g, ""));
+        if (!isNaN(num)) gstAmount = num;
+      }
+
+      // 7. GST Rate
+      const rawGstRate = getVal(["GST Rate", "Tax Rate", "GST %", "Tax %", "Rate %"]);
+      const gstRate = rawGstRate !== undefined && rawGstRate !== null ? String(rawGstRate).trim() : undefined;
+
+      // 8. Amount
+      const rawAmt = getVal(["Amount", "Total Amount", "Net Amount", "Total"]);
+      let amount: number | undefined = undefined;
+      if (rawAmt !== undefined && rawAmt !== "") {
+        const num = Number(String(rawAmt).replace(/[^0-9.]/g, ""));
+        if (!isNaN(num)) amount = num;
+      }
+
+      // 9. Net Quantity
       const rawNetQty = getVal(["Net Quantity", "NetQty", "Unit", "Package Unit"]);
       let netQuantity = sanitizeExcelValue(rawNetQty);
       if (!netQuantity) {
@@ -156,11 +235,16 @@ export class ExcelService {
 
       rows.push({
         rowIndex,
+        customBarcode,
         productName,
+        hsn,
         mrp,
         salesPrice,
         quantity,
         netQuantity,
+        gstAmount,
+        gstRate,
+        amount,
         isValid,
         errors,
         warnings,
@@ -184,31 +268,46 @@ export class ExcelService {
   }
 
   /**
-   * Create sample Excel template buffer with instructions and example rows.
+   * Create sample Excel template buffer with updated sheet structure matching user specification.
    */
   static generateTemplateBuffer(): Buffer {
     const wb = XLSX.utils.book_new();
 
     const sampleData = [
       {
-        "Product Name": "Steering Wheel 868",
-        MRP: 1599,
-        "Sales Price": 1020,
-        Quantity: 1,
+        "#": "14378278",
+        "Item name": "2.4 WIRELESS VIDEOGAME BLUE 9503",
+        "HSN/ SAC": "9503",
+        MRP: 4999,
+        Quantity: 2,
+        "Price/ Unit": 1499,
+        "GST Amount": 285.62,
+        "GST Rate": "5.00%",
+        Amount: 2998,
         "Net Quantity": "1U",
       },
       {
-        "Product Name": "Racing Car 505",
-        MRP: 1499,
-        "Sales Price": 1199,
-        Quantity: 1,
+        "#": "14378082",
+        "Item name": "4IN1 GAMES",
+        "HSN/ SAC": "9503",
+        MRP: 399,
+        Quantity: 15,
+        "Price/ Unit": 249,
+        "GST Amount": 285,
+        "GST Rate": "5.00%",
+        Amount: 3735,
         "Net Quantity": "1U",
       },
       {
-        "Product Name": "Remote Car 202",
-        MRP: 999,
-        "Sales Price": 799,
+        "#": "14378044",
+        "Item name": "ALIA WITH POUCH",
+        "HSN/ SAC": "9503",
+        MRP: 799,
         Quantity: 1,
+        "Price/ Unit": 499,
+        "GST Amount": 38.05,
+        "GST Rate": "5.00%",
+        Amount: 499,
         "Net Quantity": "1U",
       },
     ];
@@ -217,10 +316,15 @@ export class ExcelService {
 
     // Set column widths
     ws["!cols"] = [
-      { wch: 30 }, // Product Name
-      { wch: 12 }, // MRP
-      { wch: 14 }, // Sales Price
-      { wch: 12 }, // Quantity
+      { wch: 14 }, // # (Barcode Number)
+      { wch: 36 }, // Item name
+      { wch: 12 }, // HSN/ SAC
+      { wch: 10 }, // MRP
+      { wch: 10 }, // Quantity
+      { wch: 14 }, // Price/ Unit
+      { wch: 12 }, // GST Amount
+      { wch: 12 }, // GST Rate
+      { wch: 12 }, // Amount
       { wch: 14 }, // Net Quantity
     ];
 
@@ -236,10 +340,15 @@ export class ExcelService {
 
     const reportData = rows.map((r) => ({
       "Row Index": r.rowIndex,
-      "Product Name": r.productName,
+      "# (Barcode)": r.customBarcode || "(Auto)",
+      "Item name": r.productName,
+      "HSN/ SAC": r.hsn || "",
       MRP: r.mrp || "",
-      "Sales Price": r.salesPrice || "",
+      "Price/ Unit": r.salesPrice || "",
       Quantity: r.quantity || "",
+      "GST Amount": r.gstAmount ?? "",
+      "GST Rate": r.gstRate ?? "",
+      Amount: r.amount ?? "",
       Status: r.isValid ? "VALID" : "INVALID",
       Errors: r.errors.join("; "),
       Warnings: r.warnings.join("; "),
@@ -248,13 +357,18 @@ export class ExcelService {
     const ws = XLSX.utils.json_to_sheet(reportData);
     ws["!cols"] = [
       { wch: 10 },
-      { wch: 30 },
-      { wch: 10 },
+      { wch: 14 },
+      { wch: 34 },
       { wch: 12 },
       { wch: 10 },
       { wch: 12 },
-      { wch: 40 },
-      { wch: 40 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 35 },
+      { wch: 35 },
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, "Validation Error Report");

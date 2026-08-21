@@ -68,6 +68,11 @@ const ProductSchema = new mongoose.Schema({
   mrp: { type: Number, required: true },
   salesPrice: { type: Number, required: true },
   netQuantity: { type: String, default: "1U" },
+  customBarcode: { type: String },
+  hsn: { type: String },
+  gstAmount: { type: Number },
+  gstRate: { type: String },
+  amount: { type: Number },
   createdAt: { type: Date, default: Date.now },
 });
 export const ProductModel =
@@ -90,7 +95,7 @@ export const GenerationBatchModel =
 
 // 5. Barcodes
 const BarcodeSchema = new mongoose.Schema({
-  barcodeValue: { type: String, required: true, unique: true, index: true },
+  barcodeValue: { type: String, required: true, index: true },
   productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
   batchId: { type: mongoose.Schema.Types.ObjectId, ref: "GenerationBatch", required: true },
   status: { type: String, default: "active" },

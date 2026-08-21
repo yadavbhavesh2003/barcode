@@ -121,11 +121,16 @@ export function GenerationModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           products: validRows.map((r) => ({
+            customBarcode: r.customBarcode,
             productName: r.productName,
+            hsn: r.hsn,
             mrp: r.mrp,
             salesPrice: r.salesPrice,
             quantity: r.quantity,
             netQuantity: r.netQuantity,
+            gstAmount: r.gstAmount,
+            gstRate: r.gstRate,
+            amount: r.amount,
           })),
           pdfOptions: getPdfOptionsPayload(),
         }),
@@ -181,11 +186,16 @@ export function GenerationModal({
         fileName: parseResult.fileName,
         pdfOptions: getPdfOptionsPayload(),
         products: validRows.map((r) => ({
+          customBarcode: r.customBarcode,
           productName: r.productName,
+          hsn: r.hsn,
           mrp: r.mrp,
           salesPrice: r.salesPrice,
           quantity: r.quantity,
           netQuantity: r.netQuantity,
+          gstAmount: r.gstAmount,
+          gstRate: r.gstRate,
+          amount: r.amount,
         })),
       };
 

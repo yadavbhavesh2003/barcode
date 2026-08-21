@@ -104,6 +104,24 @@ export default function Home() {
     }
   };
 
+  // Update custom barcode for a specific row
+  const handleUpdateRowBarcode = (rowIndex: number, newBarcode: string) => {
+    if (!parseResult) return;
+    const trimmed = newBarcode.trim();
+    const updatedRows = parseResult.rows.map((r: any) =>
+      r.rowIndex === rowIndex ? { ...r, customBarcode: trimmed || undefined } : r
+    );
+
+    setParseResult({
+      ...parseResult,
+      rows: updatedRows,
+    });
+
+    if (selectedRow && selectedRow.rowIndex === rowIndex) {
+      setSelectedRow({ ...selectedRow, customBarcode: trimmed || undefined });
+    }
+  };
+
   const handleDownloadErrorReport = async () => {
     if (!parseResult) return;
     try {
@@ -241,6 +259,7 @@ export default function Home() {
                   setSelectedRow(row);
                 }}
                 onUpdateRowQuantity={handleUpdateRowQuantity}
+                onUpdateRowBarcode={handleUpdateRowBarcode}
                 onSetAllQuantityToOne={handleSetAllQuantityToOne}
               />
             </div>
@@ -251,7 +270,7 @@ export default function Home() {
                 mrp={selectedRow?.mrp || 1599}
                 salesPrice={selectedRow?.salesPrice || 1020}
                 netQuantity={selectedRow?.netQuantity || "1U"}
-                sampleBarcode="58310472"
+                sampleBarcode={selectedRow?.customBarcode || "14378278"}
               />
             </div>
           </div>
