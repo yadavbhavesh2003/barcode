@@ -104,6 +104,7 @@ const GenerationBatchSchema = new mongoose.Schema({
   endBarcode: { type: String, required: true },
   status: { type: String, default: "completed" },
   createdBy: { type: String, default: "Admin" },
+  pdfOptions: { type: mongoose.Schema.Types.Mixed },
   createdAt: { type: Date, default: Date.now },
 });
 export const GenerationBatchModel =
@@ -120,7 +121,40 @@ const BarcodeSchema = new mongoose.Schema({
 export const BarcodeModel =
   mongoose.models.Barcode || mongoose.model("Barcode", BarcodeSchema);
 
-// 6. Audit Logs
+// 6. Invoices / Bills
+const InvoiceItemSchema = new mongoose.Schema({
+  productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
+  barcode: { type: String, required: true },
+  productName: { type: String, required: true },
+  hsn: { type: String, default: "9503" },
+  mrp: { type: Number, required: true },
+  salesPrice: { type: Number, required: true },
+  quantity: { type: Number, required: true, default: 1 },
+  gstRate: { type: String, default: "5.00%" },
+  gstAmount: { type: Number, default: 0 },
+  totalAmount: { type: Number, required: true },
+});
+
+const InvoiceSchema = new mongoose.Schema({
+  invoiceNumber: { type: String, required: true, unique: true },
+  customerName: { type: String, default: "Walk-in Customer" },
+  customerPhone: { type: String, default: "" },
+  items: [InvoiceItemSchema],
+  totalItems: { type: Number, required: true },
+  totalQuantity: { type: Number, required: true },
+  subtotal: { type: Number, required: true },
+  totalGst: { type: Number, default: 0 },
+  discount: { type: Number, default: 0 },
+  grandTotal: { type: Number, required: true },
+  paymentMode: { type: String, default: "Cash" }, // Cash, UPI, Card
+  pdfFormat: { type: String, default: "a4" }, // a4, thermal
+  status: { type: String, default: "paid" },
+  createdAt: { type: Date, default: Date.now },
+});
+export const InvoiceModel =
+  mongoose.models.Invoice || mongoose.model("Invoice", InvoiceSchema);
+
+// 7. Audit Logs
 const AuditLogSchema = new mongoose.Schema({
   action: { type: String, required: true },
   details: { type: String },

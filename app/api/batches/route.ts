@@ -184,8 +184,11 @@ export async function POST(req: NextRequest) {
     // 6. Generate PDF Buffer
     const pdfBuffer = await PDFService.generatePDF(labelItems, mergedPdfOptions);
 
-    // 7. Mark batch completed
-    await GenerationBatchModel.updateOne({ _id: batchId }, { status: "completed" });
+    // 7. Mark batch completed and save exact pdfOptions configuration
+    await GenerationBatchModel.updateOne(
+      { _id: batchId },
+      { status: "completed", pdfOptions: mergedPdfOptions }
+    );
 
     // 8. Audit log
     await AuditLogModel.create({
@@ -193,9 +196,9 @@ export async function POST(req: NextRequest) {
       details: JSON.stringify({
         batchId: String(batchId),
         batchNumber,
+        totalProducts: products.length,
         totalLabels,
-        startBarcode,
-        endBarcode,
+        pdfOptions: mergedPdfOptions,
       }),
     });
 
@@ -244,6 +247,7 @@ export async function GET() {
       endBarcode: b.endBarcode,
       status: b.status,
       createdBy: b.createdBy,
+      pdfOptions: b.pdfOptions,
       createdAt: b.createdAt,
     }));
 

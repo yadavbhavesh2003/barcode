@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Barcode, History, Search, Settings, LayoutDashboard, FileSpreadsheet } from "lucide-react";
+import { Barcode, History, Search, Settings, LayoutDashboard, FileSpreadsheet, Receipt } from "lucide-react";
 
 export function Navbar() {
   const pathname = usePathname();
 
   const navItems = [
     { href: "/", label: "Generator", icon: LayoutDashboard },
+    { href: "/billing", label: "Billing / POS", icon: Receipt },
     { href: "/history", label: "Batches & History", icon: History },
     { href: "/search", label: "Barcode Search", icon: Search },
     { href: "/settings", label: "Printer & Settings", icon: Settings },
