@@ -10,6 +10,7 @@ export async function POST(req: NextRequest) {
       customerPhone = "",
       items = [],
       discount = 0,
+      otherCharges = 0,
       paymentMode = "Cash",
       pdfFormat = "a4", // "a4" | "thermal"
     } = body;
@@ -23,10 +24,8 @@ export async function POST(req: NextRequest) {
 
     await connectToDatabase();
 
-    // 1. Calculate invoice totals
-    let totalSales = 0;
-    let totalTaxable = 0;
-    let totalGst = 0;
+    // 1. Calculate invoice totals (No GST logic)
+    let subtotal = 0;
     let totalQuantity = 0;
 
     const formattedItems = items.map((item: any) => {
@@ -35,20 +34,8 @@ export async function POST(req: NextRequest) {
       const mrp = Number(item.mrp) || salesPrice;
       const lineTotal = salesPrice * qty;
 
-      // Extract GST percent e.g. "5.00%" or 0.05 -> 5%
-      let rawGst = String(item.gstRate || "5").replace("%", "").trim();
-      let gstPct = parseFloat(rawGst) || 5;
-      if (gstPct < 1 && gstPct > 0) gstPct = gstPct * 100;
-
-      const lineTaxable = lineTotal / (1 + gstPct / 100);
-      const lineGst = lineTotal - lineTaxable;
-
-      totalSales += lineTotal;
-      totalTaxable += lineTaxable;
-      totalGst += lineGst;
+      subtotal += lineTotal;
       totalQuantity += qty;
-
-      const cleanGstRate = gstPct % 1 === 0 ? `${gstPct}%` : `${gstPct.toFixed(2)}%`;
 
       return {
         productId: item.productId,
@@ -58,24 +45,22 @@ export async function POST(req: NextRequest) {
         mrp,
         salesPrice,
         quantity: qty,
-        gstRate: cleanGstRate,
-        gstAmount: Math.round(lineGst * 100) / 100,
         totalAmount: lineTotal,
       };
     });
 
     const disc = Number(discount || 0);
-    const grandTotal = Math.max(0, totalSales - disc);
-    const subtotal = Math.round(totalTaxable * 100) / 100;
+    const other = Number(otherCharges || 0);
+    const grandTotal = Math.max(0, subtotal - disc + other);
 
-    // 2. Generate unique Invoice Number (e.g. INV-20260821-0001)
+    // 2. Generate unique Estimate / Invoice Number (e.g. EST-20260821-0001)
     const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const todayRegex = new RegExp(`^INV-${todayStr}-`);
+    const todayRegex = new RegExp(`^(EST|INV)-${todayStr}-`);
     const countToday = await InvoiceModel.countDocuments({ invoiceNumber: todayRegex });
     const invoiceSeq = String(countToday + 1).padStart(4, "0");
-    const invoiceNumber = `INV-${todayStr}-${invoiceSeq}`;
+    const invoiceNumber = `EST-${todayStr}-${invoiceSeq}`;
 
-    // 3. Save Invoice to MongoDB
+    // 3. Save Invoice/Estimate to MongoDB
     const invoiceDoc = await InvoiceModel.create({
       invoiceNumber,
       customerName,
@@ -84,10 +69,11 @@ export async function POST(req: NextRequest) {
       totalItems: formattedItems.length,
       totalQuantity,
       subtotal,
-      totalGst,
-      discount: Number(discount || 0),
+      discount: disc,
+      otherCharges: other,
       grandTotal,
       paymentMode,
+      pdfFormat,
       status: "paid",
     });
 
@@ -106,8 +92,8 @@ export async function POST(req: NextRequest) {
       createdAt: invoiceDoc.createdAt,
       items: formattedItems,
       subtotal,
-      totalGst,
-      discount: Number(discount || 0),
+      discount: disc,
+      otherCharges: other,
       grandTotal,
       storeWebsite: settings.website || "https://runrkids.in/",
       storeName: "RUNR KIDS",

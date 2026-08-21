@@ -33,8 +33,6 @@ interface CartItem {
   mrp: number;
   salesPrice: number;
   quantity: number;
-  gstRate: string;
-  gstAmount: number;
   totalAmount: number;
 }
 
@@ -49,6 +47,7 @@ export default function BillingPage() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [paymentMode, setPaymentMode] = useState<"Cash" | "UPI" | "Card">("Cash");
   const [discount, setDiscount] = useState<number>(0);
+  const [otherCharges, setOtherCharges] = useState<number>(0);
   const [pdfFormat, setPdfFormat] = useState<"a4" | "thermal">("a4");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -121,23 +120,16 @@ export default function BillingPage() {
             const current = updated[existingIndex];
             const newQty = current.quantity + 1;
             const lineTotal = current.salesPrice * newQty;
-            const singleGst = (current.gstAmount / current.quantity) || 0;
             updated[existingIndex] = {
               ...current,
               quantity: newQty,
               totalAmount: lineTotal,
-              gstAmount: singleGst * newQty,
             };
             return updated;
           } else {
+            // Add new item to cart
             const salesPrice = Number(item.salesPrice) || Number(item.mrp) || 0;
             const mrp = Number(item.mrp) || salesPrice;
-            let rawGst = String(item.gstRate || "5").replace("%", "").trim();
-            let gstPct = parseFloat(rawGst) || 5;
-            if (gstPct < 1 && gstPct > 0) gstPct = gstPct * 100;
-            const unitTaxable = salesPrice / (1 + gstPct / 100);
-            const unitGst = salesPrice - unitTaxable;
-            const cleanGstRate = gstPct % 1 === 0 ? `${gstPct}%` : `${gstPct.toFixed(2)}%`;
 
             return [
               ...prevCart,
@@ -149,8 +141,6 @@ export default function BillingPage() {
                 mrp,
                 salesPrice,
                 quantity: 1,
-                gstRate: cleanGstRate,
-                gstAmount: unitGst,
                 totalAmount: salesPrice,
               },
             ];
@@ -183,7 +173,7 @@ export default function BillingPage() {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA";
-      
+
       // If user is typing in customer details input, do not intercept
       if (isInput && target !== scanInputRef.current) return;
 
@@ -245,12 +235,10 @@ export default function BillingPage() {
           if (item.barcode === barcode) {
             const newQty = item.quantity + delta;
             if (newQty <= 0) return null;
-            const singleGst = item.quantity > 0 ? item.gstAmount / item.quantity : 0;
             return {
               ...item,
               quantity: newQty,
               totalAmount: item.salesPrice * newQty,
-              gstAmount: singleGst * newQty,
             };
           }
           return item;
@@ -286,6 +274,7 @@ export default function BillingPage() {
     if (confirm("Are you sure you want to clear all items from this bill?")) {
       setCart([]);
       setDiscount(0);
+      setOtherCharges(0);
       setScanStatus("Cart cleared.");
       setStatusType("info");
       scanInputRef.current?.focus();
@@ -294,11 +283,10 @@ export default function BillingPage() {
 
   // Financial calculations
   const subtotal = cart.reduce((sum, item) => sum + item.totalAmount, 0);
-  const totalGst = cart.reduce((sum, item) => sum + item.gstAmount, 0);
   const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const grandTotal = Math.max(0, subtotal - Number(discount || 0));
+  const grandTotal = Math.max(0, subtotal - Number(discount || 0) + Number(otherCharges || 0));
 
-  // Submit / Generate Bill
+  // Submit / Generate Estimate / Bill
   const handleGenerateBill = async () => {
     if (cart.length === 0) {
       alert("Cart is empty! Scan items with the barcode gun first.");
@@ -315,6 +303,7 @@ export default function BillingPage() {
           customerPhone,
           paymentMode,
           discount: Number(discount || 0),
+          otherCharges: Number(otherCharges || 0),
           pdfFormat,
           items: cart,
         }),
@@ -331,6 +320,7 @@ export default function BillingPage() {
         });
         setCart([]);
         setDiscount(0);
+        setOtherCharges(0);
       } else {
         alert(`Failed to generate bill: ${data.error}`);
       }
@@ -396,10 +386,10 @@ export default function BillingPage() {
         <div>
           <h1 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-white flex items-center gap-2.5">
             <Receipt className="h-7 w-7 text-indigo-600 dark:text-indigo-400" />
-            Barcode Scanner Billing & POS
+            Barcode Scanner Billing & Estimate POS
           </h1>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            Aim scanner gun & pull trigger. Products automatically add to the bill. Edit quantity or remove products anytime.
+            Aim scanner gun & pull trigger. Products automatically add to the estimate bill with instant discount and total calculations.
           </p>
         </div>
 
@@ -414,7 +404,7 @@ export default function BillingPage() {
             }`}
           >
             <Clock className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-            {showPastBills ? "Return to Scanner POS" : "View Past Invoices"}
+            {showPastBills ? "Return to Scanner POS" : "View Past Estimates / Bills"}
           </button>
         </div>
       </div>
@@ -424,13 +414,13 @@ export default function BillingPage() {
         <div className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-base font-bold text-zinc-900 dark:text-white">
-              Invoice History & Reprints
+              Estimate & Bill History
             </h2>
             <div className="relative w-72">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
               <input
                 type="text"
-                placeholder="Search Invoice # or Customer Phone..."
+                placeholder="Search Estimate # or Customer Phone..."
                 value={searchBillQuery}
                 onChange={(e) => setSearchBillQuery(e.target.value)}
                 className="h-9 w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-9 pr-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
@@ -442,7 +432,7 @@ export default function BillingPage() {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-zinc-200 bg-zinc-50/70 font-semibold text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-300">
                 <tr>
-                  <th className="py-3 px-4">Invoice No</th>
+                  <th className="py-3 px-4">Estimate No</th>
                   <th className="py-3 px-4">Date & Time</th>
                   <th className="py-3 px-4">Customer</th>
                   <th className="py-3 px-4 text-center">Items</th>
@@ -455,7 +445,7 @@ export default function BillingPage() {
                 {pastBills.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-zinc-400">
-                      No invoices found. Generate a bill above to record your first sale!
+                      No estimates found. Generate a bill above to record your first sale!
                     </td>
                   </tr>
                 ) : (
@@ -620,6 +610,7 @@ export default function BillingPage() {
                       <tr>
                         <th className="py-2.5 px-3">Product Name & Code</th>
                         <th className="py-2.5 px-3">HSN</th>
+                        <th className="py-2.5 px-3 text-right">MRP</th>
                         <th className="py-2.5 px-3 text-right">Sale Price</th>
                         <th className="py-2.5 px-3 text-center">Qty</th>
                         <th className="py-2.5 px-3 text-right">Total Amount</th>
@@ -635,12 +626,13 @@ export default function BillingPage() {
                             </div>
                             <div className="flex items-center gap-2 mt-0.5 text-[10.5px] text-zinc-500 dark:text-zinc-400 font-mono">
                               <span className="font-bold text-indigo-600 dark:text-indigo-400">#{item.barcode}</span>
-                              <span>•</span>
-                              <span>MRP: {formatAmount(item.mrp)}</span>
                             </div>
                           </td>
                           <td className="py-3 px-3 font-mono text-zinc-500">
                             {item.hsn}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono text-zinc-500">
+                            {formatAmount(item.mrp)}
                           </td>
                           <td className="py-3 px-3 text-right font-mono font-bold text-zinc-900 dark:text-white">
                             {formatAmount(item.salesPrice)}
@@ -768,36 +760,39 @@ export default function BillingPage() {
               </div>
             </div>
 
-            {/* Bill Summary & Grand Total Card */}
+            {/* Bill Summary & Grand Total Card (No GST Mentions) */}
             <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 space-y-4">
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
-                Bill Summary
+                Estimate / Bill Summary
               </h3>
 
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between text-zinc-500">
+              <div className="space-y-2.5 text-xs">
+                <div className="flex justify-between text-zinc-600 dark:text-zinc-400">
                   <span>Subtotal ({totalQuantity} items):</span>
-                  <span className="font-mono font-semibold text-zinc-900 dark:text-white">
+                  <span className="font-mono font-bold text-zinc-900 dark:text-white">
                     {formatAmount(subtotal)}
                   </span>
                 </div>
 
-                {totalGst > 0 && (
-                  <div className="flex justify-between text-zinc-500">
-                    <span>Total GST Included:</span>
-                    <span className="font-mono font-semibold text-zinc-900 dark:text-white">
-                      {formatAmount(totalGst)}
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between text-zinc-500">
+                <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-400">
                   <span>Discount (Rs.):</span>
                   <input
                     type="number"
                     min="0"
                     value={discount || ""}
                     onChange={(e) => setDiscount(Math.max(0, Number(e.target.value)))}
+                    placeholder="0"
+                    className="h-7 w-24 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-right font-mono text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-400">
+                  <span>Other / Adjustments (Rs.):</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={otherCharges || ""}
+                    onChange={(e) => setOtherCharges(Math.max(0, Number(e.target.value)))}
                     placeholder="0"
                     className="h-7 w-24 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-right font-mono text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
                   />
@@ -813,10 +808,10 @@ export default function BillingPage() {
                 </div>
               </div>
 
-              {/* Invoice Output Format Selector */}
+              {/* Estimate Output Format Selector */}
               <div className="space-y-1 pt-1">
                 <label className="text-[11px] font-semibold text-zinc-500">
-                  Invoice Print Format:
+                  Bill Format:
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -828,7 +823,7 @@ export default function BillingPage() {
                         : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950"
                     }`}
                   >
-                    <FileText className="h-3.5 w-3.5" /> Standard A4 Bill
+                    <FileText className="h-3.5 w-3.5" /> A4 Retail Estimate
                   </button>
 
                   <button
@@ -853,7 +848,7 @@ export default function BillingPage() {
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-600/25 hover:bg-indigo-500 disabled:opacity-50 transition-all"
               >
                 <Printer className="h-4 w-4" />
-                {isSubmitting ? "Generating Bill..." : "Submit & Generate Bill PDF"}
+                {isSubmitting ? "Generating Estimate..." : "Submit & Generate Bill PDF"}
               </button>
             </div>
           </div>
@@ -872,10 +867,10 @@ export default function BillingPage() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-zinc-900 dark:text-white">
-                    Bill Generated Successfully
+                    Estimate / Bill Generated Successfully
                   </h3>
                   <p className="text-xs text-zinc-500 font-mono">
-                    Invoice: {generatedInvoice.invoiceNumber} | Grand Total: {formatCurrency(generatedInvoice.grandTotal)}
+                    Estimate: {generatedInvoice.invoiceNumber} | Grand Total: {formatCurrency(generatedInvoice.grandTotal)}
                   </p>
                 </div>
               </div>
@@ -894,7 +889,7 @@ export default function BillingPage() {
               <iframe
                 src={`data:application/pdf;base64,${generatedInvoice.pdfBase64}`}
                 className="h-[450px] w-full rounded-xl border border-zinc-300 bg-white shadow-inner dark:border-zinc-800"
-                title="Invoice PDF Preview"
+                title="Estimate PDF Preview"
               />
             </div>
 
@@ -905,7 +900,7 @@ export default function BillingPage() {
                 onClick={() => setGeneratedInvoice(null)}
                 className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
               >
-                Start New Bill (Scan Next Customer)
+                Start New Estimate (Scan Next Customer)
               </button>
 
               <div className="flex items-center gap-2">
