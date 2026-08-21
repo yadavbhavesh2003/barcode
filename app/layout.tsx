@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { Navbar } from "@/components/layout/Navbar";
+import { AuthProvider } from "@/lib/context/AuthContext";
+import { AppShell } from "@/components/layout/AppShell";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Barcode Label Generator | 50x25mm Bulk Code 128 Printing Engine",
+  title: "System 2.0 | Enterprise POS, Barcode & Admin Platform",
   description:
-    "Production-grade bulk barcode label generator for printable 50mm x 25mm retail labels from Excel files.",
+    "Production-grade enterprise administration platform for retail POS, barcode label generation, stock inventory, customer management, and financial reporting.",
 };
 
 export default function RootLayout({
@@ -19,13 +20,12 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <body
-        className={`${inter.className} flex min-h-full flex-col bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-50`}
+        className={`${inter.className} min-h-full bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-50`}
         suppressHydrationWarning
       >
-        <Navbar />
-        <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-7xl">{children}</div>
-        </main>
+        <AuthProvider>
+          <AppShell>{children}</AppShell>
+        </AuthProvider>
       </body>
     </html>
   );

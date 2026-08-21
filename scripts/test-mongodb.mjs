@@ -10,7 +10,7 @@ async function main() {
   const tracker = await SequenceTrackerModel.findOneAndUpdate(
     { _id: "barcode_counter" },
     { $inc: { currentVal: 1 } },
-    { new: true, upsert: true }
+    { returnDocument: "after", upsert: true }
   );
 
   const code = String(tracker.currentVal).padStart(8, "0");
