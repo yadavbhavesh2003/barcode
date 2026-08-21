@@ -28,6 +28,7 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then(async (m) => {
       await initDefaultSettings();
+      await syncBarcodeIndexes();
       return m;
     });
   }
@@ -40,6 +41,21 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
   }
 
   return cached.conn;
+}
+
+// Ensure unique index is dropped so duplicate SKUs / custom barcodes print without collision
+async function syncBarcodeIndexes() {
+  try {
+    const collection = BarcodeModel.collection;
+    const indexes = await collection.indexes();
+    for (const idx of indexes) {
+      if (idx.name === "barcodeValue_1" && idx.unique) {
+        await collection.dropIndex("barcodeValue_1");
+      }
+    }
+  } catch (err) {
+    // Collection may not exist yet on initial boot
+  }
 }
 
 // ----------------------------------------------------
@@ -118,10 +134,10 @@ async function initDefaultSettings() {
   const defaultSettings: Record<string, string> = {
     website: "https://runrkids.in/",
     net_quantity: "1U",
-    label_width_mm: "35.5",
+    label_width_mm: "50",
     label_height_mm: "25",
     show_border: "false",
-    show_hri: "false",
+    show_hri: "true",
     printer_offset_x_mm: "0",
     printer_offset_y_mm: "0",
     printer_scale_pct: "100",

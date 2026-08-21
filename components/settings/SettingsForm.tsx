@@ -7,10 +7,10 @@ export function SettingsForm() {
   const [settings, setSettings] = useState<Record<string, string>>({
     website: "https://runrkids.in/",
     net_quantity: "1U",
-    label_width_mm: "35.5",
+    label_width_mm: "50",
     label_height_mm: "25",
     show_border: "false",
-    show_hri: "false",
+    show_hri: "true",
     printer_offset_x_mm: "0",
     printer_offset_y_mm: "0",
     printer_scale_pct: "100",

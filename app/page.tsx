@@ -15,8 +15,8 @@ export default function Home() {
   const [selectedRow, setSelectedRow] = useState<any | null>(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [summaryMetrics, setSummaryMetrics] = useState<any | null>(null);
-  const [showHri, setShowHri] = useState(false);
-  const [showBorder, setShowBorder] = useState(false);
+  const [showHri, setShowHri] = useState(true); // Default enabled per user request
+  const [showBorder, setShowBorder] = useState(false); // Default border off unless selected
 
   // Store original Excel quantities so user can switch modes seamlessly
   const [originalExcelRows, setOriginalExcelRows] = useState<any[]>([]);

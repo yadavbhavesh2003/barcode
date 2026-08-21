@@ -61,7 +61,7 @@ export async function GET(
       labelHeightMm: Number(settings.label_height_mm || 25),
       website: settings.website || "https://runrkids.in/",
       currency: settings.currency || "INR",
-      showHri: url.searchParams.get("hri") === "1",
+      showHri: url.searchParams.has("hri") ? url.searchParams.get("hri") === "1" : true,
       showBorder: url.searchParams.get("border") === "1", // Default false (border off)
       offsetXmm: Number(settings.printer_offset_x_mm || 0),
       offsetYmm: Number(settings.printer_offset_y_mm || 0),

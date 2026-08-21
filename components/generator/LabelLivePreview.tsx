@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import bwipjs from "bwip-js";
-import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCcw, Globe } from "lucide-react";
 import { formatAmount } from "@/lib/utils";
 
 interface LabelLivePreviewProps {
@@ -21,13 +21,13 @@ interface LabelLivePreviewProps {
 }
 
 export function LabelLivePreview({
-  productName = "STEERING WHEEL 868",
-  mrp = 1599,
-  salesPrice = 1020,
+  productName = "2.4 WIRELESS VIDEOGAME BLUE 9503",
+  mrp = 4999,
+  salesPrice = 1499,
   netQuantity = "1U",
-  sampleBarcode = "00000123",
+  sampleBarcode = "14378278",
   website = "https://runrkids.in/",
-  showHri = false,
+  showHri = true, // Default enabled per user request
   showBorder = false,
   onToggleShowHri,
   onToggleShowBorder,
@@ -66,12 +66,12 @@ export function LabelLivePreview({
         ref={canvasRef}
         className={
           barcodeRotation === 90 || barcodeRotation === 270
-            ? "max-h-[70px] max-w-[28px]"
-            : "max-h-[28px] max-w-[85%]"
+            ? "max-h-[60px] max-w-[28px]"
+            : "max-h-[26px] max-w-[85%]"
         }
       />
       {showHri && (
-        <span className="font-mono text-[9.5px] font-bold tracking-[0.25em] text-black leading-none mt-0.5">
+        <span className="font-mono text-[9px] font-bold tracking-[0.2em] text-black leading-none mt-1.5">
           {sampleBarcode.split("").join(" ")}
         </span>
       )}
@@ -86,7 +86,7 @@ export function LabelLivePreview({
             Real-time Label Preview
           </h3>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Dimensions: <span className="font-mono font-medium">35.5 mm × 25 mm</span> | Layout:{" "}
+            Dimensions: <span className="font-mono font-medium">50 mm × 25 mm</span> | Layout:{" "}
             <span className="font-semibold text-indigo-600 dark:text-indigo-400 uppercase">
               {layoutPreset.replace("_", " ")} ({barcodeRotation}°)
             </span>
@@ -106,7 +106,7 @@ export function LabelLivePreview({
               }`}
               title="Click to toggle barcode number below barcode"
             >
-              Number: {showHri ? "ON" : "OFF"}
+              Number: {showHri ? "ON (Default)" : "OFF"}
             </button>
           )}
 
@@ -122,7 +122,7 @@ export function LabelLivePreview({
               }`}
               title="Click to toggle outer border outline"
             >
-              Border: {showBorder ? "ON" : "OFF"}
+              Border: {showBorder ? "ON" : "OFF (Default)"}
             </button>
           )}
 
@@ -157,10 +157,10 @@ export function LabelLivePreview({
       </div>
 
       <div className="flex min-h-[240px] items-center justify-center overflow-auto rounded-xl border border-dashed border-zinc-300 bg-zinc-100 p-6 dark:border-zinc-700 dark:bg-zinc-950/60">
-        {/* Physical 35.5mm x 25mm Label Container */}
+        {/* Physical 50mm x 25mm Label Container (2.0" x 1.0" Roll) */}
         <div
           style={{
-            width: `${35.56 * 3.78 * zoom}px`,
+            width: `${50 * 3.78 * zoom}px`,
             height: `${25 * 3.78 * zoom}px`,
           }}
           className={`relative flex rounded-xl bg-white p-2 text-black shadow-lg transition-all ${
@@ -179,20 +179,26 @@ export function LabelLivePreview({
                 <div className="text-center font-extrabold tracking-tight uppercase leading-none text-[10px] line-clamp-1">
                   {productName}
                 </div>
-                <div className="flex items-center justify-center gap-1 text-black">
+                <div className="flex items-center justify-between text-black">
                   <span className="font-bold text-[10px]">SALE PRICE:</span>
-                  <span className="font-extrabold text-[15px] tracking-tight leading-none">
-                    {formatAmount(salesPrice)}
+                  <span className="font-extrabold text-[14px] tracking-tight leading-none">
+                    ₹{formatAmount(salesPrice)}
                   </span>
                 </div>
                 <div className="w-full border-t border-zinc-400" />
-                <div className="text-center font-bold text-[10px] text-black">
-                  MRP: {formatAmount(mrp)}
+                <div className="flex items-center justify-between text-black">
+                  <span className="font-bold text-[10px]">MRP:</span>
+                  <span className="font-bold text-[11px]">
+                    ₹{formatAmount(mrp)}
+                  </span>
                 </div>
                 <div className="w-full border-t border-zinc-400" />
                 <div className="flex items-center justify-between text-[7.5px] leading-none">
                   <span className="font-bold">NET QTY: {netQuantity}</span>
-                  <span className="text-zinc-800">{website}</span>
+                  <span className="text-zinc-800 flex items-center gap-0.5">
+                    <Globe className="h-2 w-2 inline" />
+                    {website}
+                  </span>
                 </div>
               </div>
             </div>
@@ -203,20 +209,26 @@ export function LabelLivePreview({
                 <div className="text-center font-extrabold tracking-tight uppercase leading-none text-[10px] line-clamp-1">
                   {productName}
                 </div>
-                <div className="flex items-center justify-center gap-1 text-black">
+                <div className="flex items-center justify-between text-black">
                   <span className="font-bold text-[10px]">SALE PRICE:</span>
-                  <span className="font-extrabold text-[15px] tracking-tight leading-none">
-                    {formatAmount(salesPrice)}
+                  <span className="font-extrabold text-[14px] tracking-tight leading-none">
+                    ₹{formatAmount(salesPrice)}
                   </span>
                 </div>
                 <div className="w-full border-t border-zinc-400" />
-                <div className="text-center font-bold text-[10px] text-black">
-                  MRP: {formatAmount(mrp)}
+                <div className="flex items-center justify-between text-black">
+                  <span className="font-bold text-[10px]">MRP:</span>
+                  <span className="font-bold text-[11px]">
+                    ₹{formatAmount(mrp)}
+                  </span>
                 </div>
                 <div className="w-full border-t border-zinc-400" />
                 <div className="flex items-center justify-between text-[7.5px] leading-none">
                   <span className="font-bold">NET QTY: {netQuantity}</span>
-                  <span className="text-zinc-800">{website}</span>
+                  <span className="text-zinc-800 flex items-center gap-0.5">
+                    <Globe className="h-2 w-2 inline" />
+                    {website}
+                  </span>
                 </div>
               </div>
 
@@ -230,25 +242,31 @@ export function LabelLivePreview({
               <div className="text-center font-extrabold tracking-tight uppercase leading-none text-[11px] line-clamp-1">
                 {productName}
               </div>
-              <div className="flex items-center justify-center gap-1 text-black my-0.5">
+              <div className="flex items-center justify-between text-black my-0.5 px-0.5">
                 <span className="font-bold text-[11px]">SALE PRICE:</span>
-                <span className="font-extrabold text-[17px] tracking-tight leading-none">
-                  {formatAmount(salesPrice)}
+                <span className="font-extrabold text-[16px] tracking-tight leading-none">
+                  ₹{formatAmount(salesPrice)}
                 </span>
               </div>
               <div className="w-full border-t border-zinc-400" />
-              <div className="text-center font-bold text-[11px] text-black">
-                MRP: {formatAmount(mrp)}
+              <div className="flex items-center justify-between text-black px-0.5">
+                <span className="font-bold text-[11px]">MRP:</span>
+                <span className="font-bold text-[12px]">
+                  ₹{formatAmount(mrp)}
+                </span>
               </div>
               <div className="w-full border-t border-zinc-400" />
               {renderBarcodeBlock()}
-              <div className="flex items-center justify-between text-[8.5px] leading-none">
+              <div className="flex items-center justify-between text-[8px] leading-none">
                 <span className="font-bold">NET QTY: {netQuantity}</span>
-                <span className="text-zinc-800">{website}</span>
+                <span className="text-zinc-800 flex items-center gap-0.5">
+                  <Globe className="h-2 w-2 inline" />
+                  {website}
+                </span>
               </div>
             </div>
           ) : (
-            // standard (Barcode top centered)
+            // standard (Barcode top centered - Clean Reverted Design)
             <div className="flex w-full flex-col justify-between h-full">
               <div className="text-center font-extrabold tracking-tight uppercase leading-none text-[11px] line-clamp-1">
                 {productName}
@@ -256,7 +274,7 @@ export function LabelLivePreview({
               {renderBarcodeBlock()}
               <div className="flex items-center justify-center gap-1 text-black my-0.5">
                 <span className="font-bold text-[11px]">SALE PRICE:</span>
-                <span className="font-extrabold text-[17px] tracking-tight leading-none">
+                <span className="font-extrabold text-[16px] tracking-tight leading-none">
                   {formatAmount(salesPrice)}
                 </span>
               </div>
@@ -265,9 +283,9 @@ export function LabelLivePreview({
                 MRP: {formatAmount(mrp)}
               </div>
               <div className="w-full border-t border-zinc-400" />
-              <div className="flex items-center justify-between text-[8.5px] leading-none">
+              <div className="flex items-center justify-between text-[8px] leading-none px-0.5">
                 <span className="font-bold">NET QTY: {netQuantity}</span>
-                <span className="text-zinc-800">{website}</span>
+                <span className="text-zinc-800 font-semibold">{website}</span>
               </div>
             </div>
           )}

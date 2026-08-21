@@ -178,17 +178,47 @@ export function BarcodeSearch() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <span className="text-xs font-medium text-zinc-400">Net Quantity</span>
-                  <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    {searchResult.netQuantity}
+                  <span className="text-xs font-medium text-zinc-400">HSN/SAC</span>
+                  <p className="text-xs font-mono font-semibold text-zinc-700 dark:text-zinc-300">
+                    {searchResult.hsn || "-"}
                   </p>
                 </div>
                 <div>
-                  <span className="text-xs font-medium text-zinc-400">Batch Ref</span>
-                  <p className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                    {searchResult.batchNumber}
+                  <span className="text-xs font-medium text-zinc-400">Net Quantity</span>
+                  <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    {searchResult.netQuantity || "1U"}
                   </p>
                 </div>
+              </div>
+
+              {(searchResult.gstRate || searchResult.gstAmount !== undefined || searchResult.amount !== undefined) && (
+                <div className="grid grid-cols-3 gap-2 rounded-lg bg-zinc-50 dark:bg-zinc-950 p-2 text-xs">
+                  <div>
+                    <span className="text-[10px] text-zinc-400">GST Rate</span>
+                    <p className="font-semibold text-zinc-800 dark:text-zinc-200">
+                      {searchResult.gstRate || "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-zinc-400">GST Amount</span>
+                    <p className="font-semibold text-zinc-800 dark:text-zinc-200">
+                      {searchResult.gstAmount !== undefined ? `₹${searchResult.gstAmount}` : "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-zinc-400">Total Amount</span>
+                    <p className="font-bold text-indigo-600 dark:text-indigo-400">
+                      {searchResult.amount !== undefined ? `₹${searchResult.amount}` : "-"}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <span className="text-xs font-medium text-zinc-400">Batch Reference</span>
+                <p className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                  {searchResult.batchNumber} {searchResult.fileName ? `(${searchResult.fileName})` : ""}
+                </p>
               </div>
             </div>
 

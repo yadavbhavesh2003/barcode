@@ -35,18 +35,18 @@ export function GenerationModal({
   isOpen,
   onClose,
   parseResult,
-  initialShowHri = false,
-  initialShowBorder = false,
+  initialShowHri = true, // Default enabled per user request
+  initialShowBorder = false, // Default border off unless selected
   onSuccess,
 }: GenerationModalProps) {
   const modalScrollRef = useRef<HTMLDivElement>(null);
 
-  // Default: Standard 1-Up Sticker Roll (1.4" x 1.0" Roll / 35.5mm x 25mm) as requested
+  // Default: Standard 1-Up Sticker Roll (2.0" x 1.0" Roll / 50mm x 25mm) as requested
   const [pdfMode, setPdfMode] = useState<"thermal2up" | "single" | "a4" | "4x6" | "4x6_grid" | "4x6_2x5">("single");
   const [a4Preset, setA4Preset] = useState<"2x5" | "2x4" | "3x8" | "custom">("2x5");
 
-  // Dimension & Grid Parameters (Default 35.5mm x 25mm)
-  const [labelWidth, setLabelWidth] = useState(35.56);
+  // Dimension & Grid Parameters (Default 50mm x 25mm - 2.0" x 1.0" Roll)
+  const [labelWidth, setLabelWidth] = useState(50);
   const [labelHeight, setLabelHeight] = useState(25);
   const [columns, setColumns] = useState(2);
   const [rows, setRows] = useState(5);
@@ -57,7 +57,7 @@ export function GenerationModal({
   const [barcodeHeight, setBarcodeHeight] = useState(6.5);
 
   const [showBorder, setShowBorder] = useState(initialShowBorder ?? false); // Default false (border OFF)
-  const [showHri, setShowHri] = useState(initialShowHri ?? false); // Barcode Number toggle
+  const [showHri, setShowHri] = useState(initialShowHri ?? true); // Barcode Number toggle default true
   const [barcodeRotation, setBarcodeRotation] = useState<0 | 90 | 180 | 270>(0);
   const [layoutPreset, setLayoutPreset] = useState<"standard" | "barcode_bottom" | "vertical_left" | "vertical_right">("standard");
   const [showAdvanced, setShowAdvanced] = useState(false);
