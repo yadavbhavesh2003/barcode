@@ -22,6 +22,11 @@ import {
   AlertCircle,
   Undo2,
   Package,
+  MessageSquare,
+  Send,
+  Share2,
+  Smartphone,
+  Loader2,
 } from "lucide-react";
 import { formatAmount, formatCurrency } from "@/lib/utils";
 
@@ -43,7 +48,7 @@ export default function BillingPage() {
   const [statusType, setStatusType] = useState<"success" | "error" | "info">("info");
 
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [customerName, setCustomerName] = useState("Walk-in Customer");
+  const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [paymentMode, setPaymentMode] = useState<"Cash" | "UPI" | "Card">("Cash");
   const [discount, setDiscount] = useState<number>(0);
@@ -56,7 +61,26 @@ export default function BillingPage() {
     invoiceNumber: string;
     grandTotal: number;
     pdfBase64: string;
+    customerPhone?: string;
+    normalizedPhone?: string;
+    whatsappDeepLink?: string;
+    whatsappMessage?: string;
+    cloudApiSent?: boolean;
+    hasMetaConfig?: boolean;
   } | null>(null);
+
+  // WhatsApp state
+  const [whatsappPhoneInput, setWhatsappPhoneInput] = useState("");
+  const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
+  const [whatsappFeedback, setWhatsappFeedback] = useState<{
+    type: "success" | "error" | "info";
+    msg: string;
+  } | null>(null);
+
+  // History WhatsApp Dialog State
+  const [historyWhatsAppTarget, setHistoryWhatsAppTarget] = useState<any | null>(null);
+  const [historyPhoneInput, setHistoryPhoneInput] = useState("");
+  const [isHistoryWhatsAppSending, setIsHistoryWhatsAppSending] = useState(false);
 
   // Past bills list
   const [pastBills, setPastBills] = useState<any[]>([]);
@@ -268,16 +292,25 @@ export default function BillingPage() {
     scanInputRef.current?.focus();
   };
 
-  // Clear entire cart
+  // Complete Form & Cart Reset (Main POS Screen)
+  const resetBillingForm = useCallback(() => {
+    setCart([]);
+    setCustomerName("");
+    setCustomerPhone("");
+    setPaymentMode("Cash");
+    setDiscount(0);
+    setOtherCharges(0);
+    setScanInput("");
+    setScanStatus(null);
+    setStatusType("info");
+    setTimeout(() => scanInputRef.current?.focus(), 50);
+  }, []);
+
+  // Clear entire cart and customer inputs
   const clearCart = () => {
-    if (cart.length === 0) return;
-    if (confirm("Are you sure you want to clear all items from this bill?")) {
-      setCart([]);
-      setDiscount(0);
-      setOtherCharges(0);
-      setScanStatus("Cart cleared.");
-      setStatusType("info");
-      scanInputRef.current?.focus();
+    if (cart.length === 0 && customerPhone === "" && customerName === "") return;
+    if (confirm("Reset and clear this customer bill form?")) {
+      resetBillingForm();
     }
   };
 
@@ -286,10 +319,36 @@ export default function BillingPage() {
   const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
   const grandTotal = Math.max(0, subtotal - Number(discount || 0) + Number(otherCharges || 0));
 
+  // Phone number validator helper
+  const isValidPhone = (rawPhone: string) => {
+    if (!rawPhone) return false;
+    const digits = rawPhone.replace(/\D/g, "");
+    if (digits.length === 10) return /^[6-9]\d{9}$/.test(digits);
+    if (digits.length === 11 && digits.startsWith("0")) return /^[6-9]/.test(digits.slice(1));
+    if (digits.length === 12 && digits.startsWith("91")) return /^[6-9]/.test(digits.slice(2));
+    return digits.length >= 10 && digits.length <= 15;
+  };
+
   // Submit / Generate Estimate / Bill
   const handleGenerateBill = async () => {
     if (cart.length === 0) {
       alert("Cart is empty! Scan items with the barcode gun first.");
+      return;
+    }
+
+    const currentCustomerName = customerName.trim();
+    if (!currentCustomerName) {
+      alert("Customer name is mandatory. Please enter the customer's name before generating the bill.");
+      return;
+    }
+
+    const currentCustomerPhone = customerPhone.trim();
+    if (!currentCustomerPhone) {
+      alert("Customer mobile number is mandatory. Please enter a 10-digit mobile number before generating the bill.");
+      return;
+    }
+    if (!isValidPhone(currentCustomerPhone)) {
+      alert("Please enter a valid 10-digit mobile number (e.g. 9876543210).");
       return;
     }
 
@@ -299,8 +358,8 @@ export default function BillingPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customerName,
-          customerPhone,
+          customerName: currentCustomerName,
+          customerPhone: currentCustomerPhone,
           paymentMode,
           discount: Number(discount || 0),
           otherCharges: Number(otherCharges || 0),
@@ -317,10 +376,18 @@ export default function BillingPage() {
           invoiceNumber: data.invoiceNumber,
           grandTotal: data.grandTotal,
           pdfBase64: data.pdfBase64,
+          customerPhone: data.customerPhone || currentCustomerPhone,
+          normalizedPhone: data.normalizedPhone,
+          whatsappDeepLink: data.whatsappDeepLink,
+          whatsappMessage: data.whatsappMessage,
+          cloudApiSent: data.cloudApiSent,
+          hasMetaConfig: data.hasMetaConfig,
         });
-        setCart([]);
-        setDiscount(0);
-        setOtherCharges(0);
+        setWhatsappPhoneInput(data.customerPhone || currentCustomerPhone || "");
+        setWhatsappFeedback(null);
+
+        // Reset the background POS form completely for the next sale
+        resetBillingForm();
       } else {
         alert(`Failed to generate bill: ${data.error}`);
       }
@@ -328,6 +395,139 @@ export default function BillingPage() {
       alert(`Error generating bill: ${err.message}`);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // 1. Share in WhatsApp (Web/App deep link - Free Method 3)
+  const handleShareWhatsAppWeb = async () => {
+    if (!generatedInvoice) return;
+    const phoneToUse = (whatsappPhoneInput || generatedInvoice.customerPhone || "").trim();
+
+    if (phoneToUse && !isValidPhone(phoneToUse)) {
+      setWhatsappFeedback({
+        type: "error",
+        msg: "Please enter a valid 10-digit mobile number (e.g. 9876543210).",
+      });
+      return;
+    }
+
+    setIsSendingWhatsApp(true);
+    setWhatsappFeedback({ type: "info", msg: "Opening WhatsApp..." });
+
+    try {
+      const res = await fetch(`/api/bills/${generatedInvoice.invoiceId}/whatsapp?phone=${encodeURIComponent(phoneToUse)}`);
+      const data = await res.json();
+
+      if (data.success && data.deepLinkUrl) {
+        window.open(data.deepLinkUrl, "_blank");
+        setWhatsappFeedback({
+          type: "success",
+          msg: `✓ WhatsApp Web/App opened for ${data.phone ? "+" + data.phone : "customer"}! Click Send in WhatsApp.`,
+        });
+      } else {
+        setWhatsappFeedback({
+          type: "error",
+          msg: data.error || "Failed to generate WhatsApp share link.",
+        });
+      }
+    } catch (err: any) {
+      setWhatsappFeedback({
+        type: "error",
+        msg: `Connection error: ${err.message}`,
+      });
+    } finally {
+      setIsSendingWhatsApp(false);
+    }
+  };
+
+  // 2. Send via Meta WhatsApp Cloud API (Automated Background Send - Method 1)
+  const handleSendWhatsAppCloudApi = async () => {
+    if (!generatedInvoice) return;
+    const phoneToUse = (whatsappPhoneInput || generatedInvoice.customerPhone || "").trim();
+
+    if (!phoneToUse || !isValidPhone(phoneToUse)) {
+      setWhatsappFeedback({
+        type: "error",
+        msg: "Please enter a valid 10-digit mobile number (e.g. 9876543210).",
+      });
+      return;
+    }
+
+    setIsSendingWhatsApp(true);
+    setWhatsappFeedback({ type: "info", msg: "Sending message via Meta WhatsApp Cloud API..." });
+
+    try {
+      const res = await fetch(`/api/bills/${generatedInvoice.invoiceId}/whatsapp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phoneToUse, sendViaCloudApi: true }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        if (data.cloudApiResult?.sent) {
+          setWhatsappFeedback({
+            type: "success",
+            msg: `✓ Bill sent directly to customer (+${data.phone}) via Meta WhatsApp Cloud API!`,
+          });
+        } else {
+          // Cloud API returned error or was not configured
+          setWhatsappFeedback({
+            type: "error",
+            msg: `Meta API: ${data.cloudApiResult?.error || "Credentials not configured in Settings. Use 'Share in WhatsApp' or enter credentials in Settings."}`,
+          });
+        }
+      } else {
+        setWhatsappFeedback({
+          type: "error",
+          msg: data.error || "Failed to dispatch via WhatsApp API.",
+        });
+      }
+    } catch (err: any) {
+      setWhatsappFeedback({
+        type: "error",
+        msg: `API error: ${err.message}`,
+      });
+    } finally {
+      setIsSendingWhatsApp(false);
+    }
+  };
+
+  // WhatsApp Action for Past Bills
+  const handleOpenHistoryWhatsApp = (bill: any) => {
+    setHistoryWhatsAppTarget(bill);
+    setHistoryPhoneInput(bill.customerPhone || "");
+  };
+
+  const handleSendHistoryWhatsApp = async () => {
+    if (!historyWhatsAppTarget) return;
+    setIsHistoryWhatsAppSending(true);
+
+    try {
+      const res = await fetch(`/api/bills/${historyWhatsAppTarget._id}/whatsapp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: historyPhoneInput.trim(),
+          sendViaCloudApi: true,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        if (data.cloudApiResult?.sent) {
+          alert(`✓ Bill receipt successfully sent to +${data.phone} via Meta Cloud API!`);
+        } else {
+          window.open(data.deepLinkUrl, "_blank");
+        }
+        setHistoryWhatsAppTarget(null);
+      } else {
+        alert(`WhatsApp error: ${data.error || "Failed to process WhatsApp request"}`);
+      }
+    } catch (err: any) {
+      alert(`Error sending WhatsApp bill: ${err.message}`);
+    } finally {
+      setIsHistoryWhatsAppSending(false);
     }
   };
 
@@ -493,6 +693,14 @@ export default function BillingPage() {
                         >
                           <Receipt className="h-3 w-3 text-amber-600" /> POS Receipt
                         </a>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenHistoryWhatsApp(bill)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-900 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+                          title="Send or share bill receipt via WhatsApp"
+                        >
+                          <MessageSquare className="h-3 w-3 text-emerald-600" /> WhatsApp
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -686,33 +894,85 @@ export default function BillingPage() {
           <div className="lg:col-span-4 space-y-4">
             {/* Customer Details Box */}
             <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
-                Customer & Payment Details
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                  Customer & Payment Details
+                </h3>
+                <button
+                  type="button"
+                  onClick={resetBillingForm}
+                  className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-white transition-all"
+                  title="Reset customer details, payment method, discounts, and cart for a new sale"
+                >
+                  <Undo2 className="h-3 w-3" /> Reset / New Sale
+                </button>
+              </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-zinc-500">
-                  Customer Name
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">
+                    Customer Name <span className="text-rose-500 font-bold">*</span>
+                  </label>
+                  {customerName.trim() ? (
+                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                      ✓ Provided
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-rose-500 dark:text-rose-400">
+                      * Mandatory
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Walk-in Customer"
-                  className="mt-1 h-9 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+                  placeholder="e.g. Rahul Sharma"
+                  required
+                  className={`mt-1 h-9 w-full rounded-xl border px-3 text-xs focus:outline-none dark:bg-zinc-950 dark:text-white transition-all ${
+                    !customerName.trim()
+                      ? "border-zinc-200 bg-zinc-50 text-zinc-900 focus:border-indigo-500 dark:border-zinc-800"
+                      : "border-emerald-400 bg-emerald-50/30 text-emerald-950 focus:border-emerald-500 dark:border-emerald-800 dark:bg-emerald-950/30"
+                  }`}
                 />
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-zinc-500">
-                  Phone Number (Optional)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">
+                    Customer Mobile Number <span className="text-rose-500 font-bold">*</span>
+                  </label>
+                  {customerPhone.trim() ? (
+                    <span className={`text-[10px] font-semibold ${
+                      isValidPhone(customerPhone)
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-rose-500 dark:text-rose-400"
+                    }`}>
+                      {isValidPhone(customerPhone) ? "✓ Valid Mobile" : "⚠ 10 digits required"}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-rose-500 dark:text-rose-400">
+                      * Mandatory
+                    </span>
+                  )}
+                </div>
                 <input
                   type="tel"
                   value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder="+91 98765 43210"
-                  className="mt-1 h-9 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9+\s-]/g, "");
+                    setCustomerPhone(val);
+                  }}
+                  placeholder="e.g. 9876543210 (10 digits)"
+                  maxLength={15}
+                  required
+                  className={`mt-1 h-9 w-full rounded-xl border px-3 text-xs focus:outline-none dark:bg-zinc-950 dark:text-white transition-all ${
+                    customerPhone.trim() && !isValidPhone(customerPhone)
+                      ? "border-rose-400 bg-rose-50/40 text-rose-900 focus:border-rose-500 dark:border-rose-800 dark:bg-rose-950/30"
+                      : customerPhone.trim() && isValidPhone(customerPhone)
+                      ? "border-emerald-400 bg-emerald-50/30 text-emerald-950 focus:border-emerald-500 dark:border-emerald-800 dark:bg-emerald-950/30"
+                      : "border-zinc-200 bg-zinc-50 text-zinc-900 focus:border-indigo-500 dark:border-zinc-800"
+                  }`}
                 />
               </div>
 
@@ -877,7 +1137,12 @@ export default function BillingPage() {
 
               <button
                 type="button"
-                onClick={() => setGeneratedInvoice(null)}
+                onClick={() => {
+                  setGeneratedInvoice(null);
+                  setWhatsappPhoneInput("");
+                  setWhatsappFeedback(null);
+                  resetBillingForm();
+                }}
                 className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
               >
                 <X className="h-5 w-5" />
@@ -885,19 +1150,103 @@ export default function BillingPage() {
             </div>
 
             {/* Modal Body: PDF Live Preview Iframe */}
-            <div className="flex-1 bg-zinc-100 p-4 dark:bg-zinc-950 min-h-[450px]">
+            <div className="flex-1 bg-zinc-100 p-4 dark:bg-zinc-950 min-h-[420px]">
               <iframe
                 src={`data:application/pdf;base64,${generatedInvoice.pdfBase64}`}
-                className="h-[450px] w-full rounded-xl border border-zinc-300 bg-white shadow-inner dark:border-zinc-800"
+                className="h-[420px] w-full rounded-xl border border-zinc-300 bg-white shadow-inner dark:border-zinc-800"
                 title="Estimate PDF Preview"
               />
+            </div>
+
+            {/* WhatsApp Fast Share Strip */}
+            <div className="border-t border-emerald-100 bg-emerald-50/80 px-6 py-3.5 dark:border-emerald-900/50 dark:bg-emerald-950/40">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs">
+                    <MessageSquare className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
+                      WhatsApp Bill Options
+                    </span>
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                      Choose to open/share in WhatsApp Web or dispatch via WhatsApp API
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <Smartphone className="absolute left-2.5 top-2 h-3.5 w-3.5 text-zinc-400" />
+                    <input
+                      type="tel"
+                      value={whatsappPhoneInput}
+                      onChange={(e) => setWhatsappPhoneInput(e.target.value)}
+                      placeholder="WhatsApp Mobile Number..."
+                      className="h-8 w-52 rounded-lg border border-emerald-300 bg-white pl-8 pr-2.5 text-xs text-zinc-900 focus:border-emerald-600 focus:outline-none dark:border-emerald-800 dark:bg-zinc-900 dark:text-white"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleShareWhatsAppWeb()}
+                    disabled={isSendingWhatsApp}
+                    className="flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-50 transition-all"
+                    title="Open WhatsApp Web or App with pre-filled formatted receipt and PDF link"
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                    Share on WhatsApp
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSendWhatsAppCloudApi()}
+                    disabled={isSendingWhatsApp}
+                    className="flex items-center gap-1.5 rounded-lg border border-indigo-600 bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 transition-all"
+                    title="Send via official Meta WhatsApp Business Cloud API in the background"
+                  >
+                    {isSendingWhatsApp ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                    Send via WhatsApp API
+                  </button>
+                </div>
+              </div>
+
+              {whatsappFeedback && (
+                <div
+                  className={`mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                    whatsappFeedback.type === "success"
+                      ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200"
+                      : whatsappFeedback.type === "error"
+                      ? "bg-rose-100 text-rose-900 dark:bg-rose-900/60 dark:text-rose-200"
+                      : "bg-blue-100 text-blue-900 dark:bg-blue-900/60 dark:text-blue-200"
+                  }`}
+                >
+                  {whatsappFeedback.type === "success" ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  ) : whatsappFeedback.type === "error" ? (
+                    <AlertCircle className="h-3.5 w-3.5 text-rose-600" />
+                  ) : (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                  )}
+                  {whatsappFeedback.msg}
+                </div>
+              )}
             </div>
 
             {/* Modal Footer Actions */}
             <div className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-6 py-3.5 dark:border-zinc-800 dark:bg-zinc-950">
               <button
                 type="button"
-                onClick={() => setGeneratedInvoice(null)}
+                onClick={() => {
+                  setGeneratedInvoice(null);
+                  setWhatsappPhoneInput("");
+                  setWhatsappFeedback(null);
+                  resetBillingForm();
+                }}
                 className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
               >
                 Start New Estimate (Scan Next Customer)
@@ -920,6 +1269,130 @@ export default function BillingPage() {
                   <Printer className="h-4 w-4" /> Print Bill Now
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* History Bill WhatsApp Dialog Modal */}
+      {historyWhatsAppTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                  <MessageSquare className="h-4 w-4" />
+                </div>
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+                  WhatsApp Bill Options
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistoryWhatsAppTarget(null)}
+                className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3 text-xs">
+              <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <div className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                  {historyWhatsAppTarget.invoiceNumber}
+                </div>
+                <div className="text-zinc-600 dark:text-zinc-400">
+                  Customer: <strong>{historyWhatsAppTarget.customerName || "Walk-in"}</strong> | Total: <strong>{formatCurrency(historyWhatsAppTarget.grandTotal)}</strong>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Recipient WhatsApp Mobile Number
+                </label>
+                <div className="relative mt-1">
+                  <Smartphone className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                  <input
+                    type="tel"
+                    value={historyPhoneInput}
+                    onChange={(e) => setHistoryPhoneInput(e.target.value)}
+                    placeholder="e.g. 9876543210 or +91 98765 43210"
+                    className="h-9 w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-8 pr-3 font-mono text-xs text-zinc-900 focus:border-emerald-600 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-950">
+              <button
+                type="button"
+                onClick={() => setHistoryWhatsAppTarget(null)}
+                className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!historyWhatsAppTarget) return;
+                  try {
+                    const res = await fetch(`/api/bills/${historyWhatsAppTarget._id}/whatsapp?phone=${encodeURIComponent(historyPhoneInput.trim())}`);
+                    const data = await res.json();
+                    if (data.success && data.deepLinkUrl) {
+                      window.open(data.deepLinkUrl, "_blank");
+                      setHistoryWhatsAppTarget(null);
+                    } else {
+                      alert(data.error || "Failed to generate WhatsApp share link.");
+                    }
+                  } catch (e: any) {
+                    alert(e.message);
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-500"
+              >
+                <Share2 className="h-3.5 w-3.5" /> Share on WhatsApp
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!historyWhatsAppTarget) return;
+                  if (!historyPhoneInput.trim()) {
+                    alert("Please enter customer's mobile number.");
+                    return;
+                  }
+                  setIsHistoryWhatsAppSending(true);
+                  try {
+                    const res = await fetch(`/api/bills/${historyWhatsAppTarget._id}/whatsapp`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ phone: historyPhoneInput.trim(), sendViaCloudApi: true }),
+                    });
+                    const data = await res.json();
+                    if (data.success && data.cloudApiResult?.sent) {
+                      alert(`✓ Bill receipt successfully sent to +${data.phone} via Meta WhatsApp Cloud API!`);
+                      setHistoryWhatsAppTarget(null);
+                    } else {
+                      alert(`WhatsApp API: ${data.cloudApiResult?.error || data.error || "Failed. Ensure Meta API credentials are configured in Settings or use 'Share on WhatsApp'."}`);
+                    }
+                  } catch (e: any) {
+                    alert(`API Error: ${e.message}`);
+                  } finally {
+                    setIsHistoryWhatsAppSending(false);
+                  }
+                }}
+                disabled={isHistoryWhatsAppSending}
+                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {isHistoryWhatsAppSending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="h-3.5 w-3.5" />
+                )}
+                Send via API
+              </button>
             </div>
           </div>
         </div>

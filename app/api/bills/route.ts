@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase, InvoiceModel, ProductModel, BarcodeModel, SystemSettingModel } from "@/lib/db/mongodb";
 import { InvoicePDFService, InvoiceData } from "@/lib/services/invoice-pdf.service";
+import { WhatsAppService, WhatsAppInvoiceData } from "@/lib/services/whatsapp.service";
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,6 +19,22 @@ export async function POST(req: NextRequest) {
     if (!items || items.length === 0) {
       return NextResponse.json(
         { success: false, error: "Cannot generate bill: cart has no items." },
+        { status: 400 }
+      );
+    }
+
+    const trimmedName = String(customerName || "").trim();
+    if (!trimmedName) {
+      return NextResponse.json(
+        { success: false, error: "Customer name is mandatory to generate a bill." },
+        { status: 400 }
+      );
+    }
+
+    const trimmedPhone = String(customerPhone || "").trim();
+    if (!trimmedPhone || !WhatsAppService.isValidPhoneNumber(trimmedPhone)) {
+      return NextResponse.json(
+        { success: false, error: "Customer 10-digit mobile number is mandatory to generate a bill." },
         { status: 400 }
       );
     }
@@ -78,11 +95,14 @@ export async function POST(req: NextRequest) {
     });
 
     // 4. Fetch store settings
+    // Load store settings merged with .env
     const settingRows = await SystemSettingModel.find().lean();
-    const settings: Record<string, string> = {};
+    const dbSettings: Record<string, string> = {};
     for (const r of settingRows) {
-      settings[r.key] = r.value;
+      dbSettings[r.key] = r.value;
     }
+
+    const config = WhatsAppService.getResolvedConfig(dbSettings);
 
     const invoiceData: InvoiceData = {
       invoiceNumber,
@@ -95,8 +115,8 @@ export async function POST(req: NextRequest) {
       discount: disc,
       otherCharges: other,
       grandTotal,
-      storeWebsite: settings.website || "https://runrkids.in/",
-      storeName: "RUNR KIDS",
+      storeWebsite: config.storeWebsite,
+      storeName: config.storeName,
     };
 
     // 5. Generate PDF
@@ -109,14 +129,50 @@ export async function POST(req: NextRequest) {
 
     const pdfBase64 = Buffer.from(pdfBytes).toString("base64");
 
+    // 6. Generate WhatsApp message & deep link
+    const origin =
+      config.appUrl ||
+      req.headers.get("origin") ||
+      (req.headers.get("host") ? `http://${req.headers.get("host")}` : "") ||
+      config.storeWebsite ||
+      "";
+
+    const defaultCountryCode = config.defaultCountryCode;
+    const normalizedPhone = WhatsAppService.normalizePhoneNumber(customerPhone, defaultCountryCode);
+
+    const whatsappData: WhatsAppInvoiceData = {
+      invoiceId: String(invoiceDoc._id),
+      invoiceNumber,
+      customerName,
+      customerPhone,
+      createdAt: invoiceDoc.createdAt,
+      paymentMode,
+      items: formattedItems,
+      subtotal,
+      discount: disc,
+      otherCharges: other,
+      grandTotal,
+      pdfFormat,
+    };
+
+    const whatsappMessage = WhatsAppService.formatWhatsAppReceiptText(whatsappData, dbSettings, origin);
+    const whatsappDeepLink = WhatsAppService.getWhatsAppDeepLink(normalizedPhone, whatsappMessage, defaultCountryCode);
+
     return NextResponse.json({
       success: true,
       invoiceId: String(invoiceDoc._id),
       invoiceNumber,
+      customerName,
+      customerPhone,
+      normalizedPhone,
       totalItems: formattedItems.length,
       totalQuantity,
       grandTotal,
       pdfBase64,
+      whatsappDeepLink,
+      whatsappMessage,
+      cloudApiSent: false,
+      hasMetaConfig: config.hasMetaCredentials,
     });
   } catch (error: any) {
     console.error("Bill generation error:", error);

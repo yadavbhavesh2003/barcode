@@ -185,6 +185,16 @@ async function initDefaultSettings() {
     a4_gap_y_mm: "2",
     a4_columns: "4",
     a4_rows: "10",
+    store_name: "RUNR KIDS",
+    whatsapp_mode: "direct", // "direct" (wa.me) | "cloud_api" (Meta Cloud API) | "both"
+    whatsapp_phone_number_id: "",
+    whatsapp_access_token: "",
+    whatsapp_template_name: "",
+    whatsapp_template_lang: "en_US",
+    whatsapp_default_country_code: "91",
+    whatsapp_custom_greeting: "Thank you for shopping at *RUNR KIDS*!",
+    whatsapp_custom_footer: "🧸 *RUNR KIDS* — Visit us again at https://runrkids.in/",
+    whatsapp_auto_send: "false",
   };
 
   for (const [key, value] of Object.entries(defaultSettings)) {

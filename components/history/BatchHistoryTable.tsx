@@ -16,6 +16,11 @@ import {
   Banknote,
   QrCode,
   Calendar,
+  MessageSquare,
+  Send,
+  Share2,
+  X,
+  Smartphone,
 } from "lucide-react";
 import { formatAmount, formatCurrency } from "@/lib/utils";
 
@@ -64,6 +69,64 @@ export function BatchHistoryTable() {
   const [totalInvoicesCount, setTotalInvoicesCount] = useState(0);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
   const [invoiceSearch, setInvoiceSearch] = useState("");
+
+  // WhatsApp Dialog State
+  const [whatsAppTarget, setWhatsAppTarget] = useState<InvoiceRecord | null>(null);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
+
+  const isValidPhone = (rawPhone: string) => {
+    if (!rawPhone) return false;
+    const digits = rawPhone.replace(/\D/g, "");
+    if (digits.length === 10) return /^[6-9]\d{9}$/.test(digits);
+    if (digits.length === 11 && digits.startsWith("0")) return /^[6-9]/.test(digits.slice(1));
+    if (digits.length === 12 && digits.startsWith("91")) return /^[6-9]/.test(digits.slice(2));
+    return digits.length >= 10 && digits.length <= 15;
+  };
+
+  const handleOpenWhatsAppModal = (invoice: InvoiceRecord) => {
+    setWhatsAppTarget(invoice);
+    setPhoneInput(invoice.customerPhone || "");
+  };
+
+  const handleSendWhatsApp = async () => {
+    if (!whatsAppTarget) return;
+    const trimmed = phoneInput.trim();
+
+    if (!trimmed || !isValidPhone(trimmed)) {
+      alert("Please enter a valid 10-digit mobile number (e.g. 9876543210).");
+      return;
+    }
+
+    setIsSendingWhatsApp(true);
+
+    try {
+      const res = await fetch(`/api/bills/${whatsAppTarget._id}/whatsapp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: trimmed,
+          sendViaCloudApi: true,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        if (data.cloudApiResult?.sent) {
+          alert(`✓ Bill receipt successfully sent to +${data.phone} via WhatsApp Cloud API!`);
+          setWhatsAppTarget(null);
+        } else {
+          alert(`WhatsApp API: ${data.cloudApiResult?.error || "Failed. Ensure Meta API credentials are configured in Settings or use 'Share on WhatsApp'."}`);
+        }
+      } else {
+        alert(`WhatsApp error: ${data.error || "Failed to process WhatsApp request"}`);
+      }
+    } catch (err: any) {
+      alert(`Error sending WhatsApp bill: ${err.message}`);
+    } finally {
+      setIsSendingWhatsApp(false);
+    }
+  };
 
   const fetchBatches = async () => {
     setIsLoadingBatches(true);
@@ -396,6 +459,14 @@ export function BatchHistoryTable() {
                               >
                                 <Receipt className="h-3 w-3 text-amber-600" /> POS Receipt
                               </a>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenWhatsAppModal(inv)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-900 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 transition-all"
+                                title="Send bill copy to customer via WhatsApp"
+                              >
+                                <MessageSquare className="h-3 w-3 text-emerald-600" /> WhatsApp
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -408,6 +479,112 @@ export function BatchHistoryTable() {
           </div>
         )}
       </div>
+
+      {/* WhatsApp Send Dialog Modal */}
+      {whatsAppTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                  <MessageSquare className="h-4 w-4" />
+                </div>
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+                  Send Bill on WhatsApp
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWhatsAppTarget(null)}
+                className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3 text-xs">
+              <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <div className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                  {whatsAppTarget.invoiceNumber}
+                </div>
+                <div className="text-zinc-600 dark:text-zinc-400">
+                  Customer: <strong>{whatsAppTarget.customerName || "Walk-in"}</strong> | Total: <strong>{formatCurrency(whatsAppTarget.grandTotal)}</strong>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Recipient WhatsApp Mobile Number
+                </label>
+                <div className="relative mt-1">
+                  <Smartphone className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                  <input
+                    type="tel"
+                    value={phoneInput}
+                    onChange={(e) => setPhoneInput(e.target.value)}
+                    placeholder="e.g. 9876543210 or +91 98765 43210"
+                    className="h-9 w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-8 pr-3 font-mono text-xs text-zinc-900 focus:border-emerald-600 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-950">
+              <button
+                type="button"
+                onClick={() => setWhatsAppTarget(null)}
+                className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!whatsAppTarget) return;
+                  const trimmed = phoneInput.trim();
+                  if (trimmed && !isValidPhone(trimmed)) {
+                    alert("Please enter a valid 10-digit mobile number (e.g. 9876543210).");
+                    return;
+                  }
+                  try {
+                    const res = await fetch(`/api/bills/${whatsAppTarget._id}/whatsapp?phone=${encodeURIComponent(trimmed)}`);
+                    const data = await res.json();
+                    if (data.success && data.deepLinkUrl) {
+                      window.open(data.deepLinkUrl, "_blank");
+                      setWhatsAppTarget(null);
+                    } else {
+                      alert(data.error || "Failed to generate WhatsApp share link.");
+                    }
+                  } catch (e: any) {
+                    alert(e.message);
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-500"
+                title="Open WhatsApp Web or App directly"
+              >
+                <Share2 className="h-3.5 w-3.5" /> Share on WhatsApp
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSendWhatsApp}
+                disabled={isSendingWhatsApp}
+                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-indigo-500 disabled:opacity-50"
+                title="Send via official Meta WhatsApp Cloud API in the background"
+              >
+                {isSendingWhatsApp ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="h-3.5 w-3.5" />
+                )}
+                Send via API
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

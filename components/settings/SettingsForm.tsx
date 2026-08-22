@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings, Save, Printer, Loader2, CheckCircle2, Sliders, Globe, LayoutGrid } from "lucide-react";
+import { Settings, Save, Printer, Loader2, CheckCircle2, Sliders, Globe, LayoutGrid, MessageSquare, Send, Smartphone, Key, ShieldAlert } from "lucide-react";
 
 export function SettingsForm() {
   const [settings, setSettings] = useState<Record<string, string>>({
     website: "https://runrkids.in/",
+    store_name: "RUNR KIDS",
     net_quantity: "1U",
     label_width_mm: "50",
     label_height_mm: "25",
@@ -24,6 +25,15 @@ export function SettingsForm() {
     a4_gap_y_mm: "3",
     a4_columns: "2",
     a4_rows: "5",
+    whatsapp_mode: "direct",
+    whatsapp_phone_number_id: "",
+    whatsapp_access_token: "",
+    whatsapp_template_name: "",
+    whatsapp_template_lang: "en_US",
+    whatsapp_default_country_code: "91",
+    whatsapp_custom_greeting: "Thank you for shopping at *RUNR KIDS*!",
+    whatsapp_custom_footer: "🧸 *RUNR KIDS* — Visit us again at https://runrkids.in/",
+    whatsapp_auto_send: "false",
   });
 
   const [isLoading, setIsLoading] = useState(true);
@@ -358,6 +368,160 @@ export function SettingsForm() {
                 <li>Calibrate Sensor: Turn printer ON while holding <strong>FEED</strong> button.</li>
               </ul>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. WhatsApp Bill Delivery & Cloud API Settings (Method 1 & Method 3) */}
+      <div className="flex flex-col gap-4 rounded-2xl border border-emerald-200 bg-white p-6 shadow-sm dark:border-emerald-950/60 dark:bg-zinc-900">
+        <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+              <MessageSquare className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-zinc-900 dark:text-white">
+                WhatsApp Bill Delivery & Template Settings
+              </h2>
+              <p className="text-xs text-zinc-500">
+                Supports 1-Click WhatsApp Direct Share (Free, Method 3) and Meta Cloud API (Method 1)
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              Store / Business Name
+            </label>
+            <input
+              type="text"
+              value={settings.store_name || "RUNR KIDS"}
+              onChange={(e) => handleChange("store_name", e.target.value)}
+              placeholder="RUNR KIDS"
+              className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              Default WhatsApp Sending Mode
+            </label>
+            <select
+              value={settings.whatsapp_mode || "direct"}
+              onChange={(e) => handleChange("whatsapp_mode", e.target.value)}
+              className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+            >
+              <option value="direct">Method 3: 1-Click WhatsApp Direct Share (wa.me - Free & No Setup)</option>
+              <option value="cloud_api">Method 1: Meta WhatsApp Cloud API (Automated Server Background)</option>
+              <option value="both">Both: Background Cloud API + 1-Click Share Fallback</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              Default Country Code
+            </label>
+            <input
+              type="text"
+              value={settings.whatsapp_default_country_code || "91"}
+              onChange={(e) => handleChange("whatsapp_default_country_code", e.target.value)}
+              placeholder="91"
+              className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              Auto-Dispatch on Bill Generation
+            </label>
+            <select
+              value={settings.whatsapp_auto_send || "false"}
+              onChange={(e) => handleChange("whatsapp_auto_send", e.target.value)}
+              className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+            >
+              <option value="false">Manual (Click Send to WhatsApp in modal)</option>
+              <option value="true">Automatic (Auto-trigger Cloud API / Open WhatsApp immediately)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Meta Cloud API Section */}
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/40 space-y-3">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+            <Key className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+            Meta WhatsApp Cloud API Credentials (Optional - For Method 1 Background Automation)
+          </h4>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">
+                Meta Phone Number ID
+              </label>
+              <input
+                type="text"
+                value={settings.whatsapp_phone_number_id || ""}
+                onChange={(e) => handleChange("whatsapp_phone_number_id", e.target.value)}
+                placeholder="e.g. 104829384918234"
+                className="mt-1 h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 font-mono text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">
+                Template Name (Approved in Meta WhatsApp Manager)
+              </label>
+              <input
+                type="text"
+                value={settings.whatsapp_template_name || ""}
+                onChange={(e) => handleChange("whatsapp_template_name", e.target.value)}
+                placeholder="e.g. bill_receipt or invoice_notification"
+                className="mt-1 h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 font-mono text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-white"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">
+                Meta Permanent Access Token (Bearer Token)
+              </label>
+              <input
+                type="password"
+                value={settings.whatsapp_access_token || ""}
+                onChange={(e) => handleChange("whatsapp_access_token", e.target.value)}
+                placeholder="EAAB..."
+                className="mt-1 h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 font-mono text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-white"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Custom Greeting and Footer */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              WhatsApp Greeting Header Text
+            </label>
+            <input
+              type="text"
+              value={settings.whatsapp_custom_greeting || ""}
+              onChange={(e) => handleChange("whatsapp_custom_greeting", e.target.value)}
+              placeholder="Thank you for shopping at *RUNR KIDS*!"
+              className="mt-1 h-9 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              WhatsApp Footer Message
+            </label>
+            <input
+              type="text"
+              value={settings.whatsapp_custom_footer || ""}
+              onChange={(e) => handleChange("whatsapp_custom_footer", e.target.value)}
+              placeholder="🧸 Visit us again at https://runrkids.in/"
+              className="mt-1 h-9 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+            />
           </div>
         </div>
       </div>
