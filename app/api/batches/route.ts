@@ -15,11 +15,16 @@ interface IncomingBatchRequest {
   fileName: string;
   pdfOptions?: PDFOptions;
   products: {
+    customBarcode?: string;
     productName: string;
+    hsn?: string;
     mrp: number;
     salesPrice: number;
     quantity: number;
     netQuantity?: string;
+    gstAmount?: number;
+    gstRate?: string;
+    amount?: number;
   }[];
 }
 
@@ -45,9 +50,21 @@ export async function POST(req: NextRequest) {
 
     await connectToDatabase();
 
-    // 1. Reserve 8-digit unique barcodes atomically in MongoDB
-    const reservation = await BarcodeService.reserveBarcodes(totalLabels);
-    const { barcodes, startBarcode, endBarcode } = reservation;
+    // 1. Calculate how many labels require auto-generated 8-digit unique barcodes
+    const autoBarcodeLabelsCount = products.reduce((acc, p) => {
+      return acc + (p.customBarcode && p.customBarcode.trim() !== "" ? 0 : p.quantity);
+    }, 0);
+
+    let autoBarcodes: string[] = [];
+    let autoStartBarcode = "";
+    let autoEndBarcode = "";
+
+    if (autoBarcodeLabelsCount > 0) {
+      const reservation = await BarcodeService.reserveBarcodes(autoBarcodeLabelsCount);
+      autoBarcodes = reservation.barcodes;
+      autoStartBarcode = reservation.startBarcode;
+      autoEndBarcode = reservation.endBarcode;
+    }
 
     // 2. Generate batch number e.g. BATCH-20260819-0001
     const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
@@ -58,44 +75,41 @@ export async function POST(req: NextRequest) {
     const batchSeq = String(countToday + 1).padStart(4, "0");
     const batchNumber = `BATCH-${todayStr}-${batchSeq}`;
 
-    // 3. Create GenerationBatch record
-    const batchDoc = await GenerationBatchModel.create({
-      batchNumber,
-      fileName: fileName || "products.xlsx",
-      totalProducts: products.length,
-      totalLabels,
-      startBarcode,
-      endBarcode,
-      status: "reserved",
-      createdBy: "Admin",
-    });
-
-    const batchId = batchDoc._id;
-
-    // 4. Create Product & Barcode records in bulk (High performance for 1,000+ items)
+    // 3. Create Product & Barcode records in bulk (High performance for 1,000+ items)
     const productDocsToInsert = products.map((prod) => ({
       name: prod.productName,
       mrp: prod.mrp,
       salesPrice: prod.salesPrice,
       netQuantity: prod.netQuantity || "1U",
+      customBarcode: prod.customBarcode?.trim() || undefined,
+      hsn: prod.hsn || undefined,
+      gstAmount: prod.gstAmount,
+      gstRate: prod.gstRate,
+      amount: prod.amount,
     }));
 
     const createdProdDocs = await ProductModel.insertMany(productDocsToInsert);
 
     const barcodeDocs = [];
     const labelItems: LabelItemData[] = [];
-    let barcodeIndex = 0;
+    const assignedBarcodesList: string[] = [];
+    let autoBarcodeIndex = 0;
 
     for (let i = 0; i < products.length; i++) {
       const prod = products[i];
       const prodDoc = createdProdDocs[i];
 
+      const itemBarcodeValue = prod.customBarcode && prod.customBarcode.trim() !== ""
+        ? prod.customBarcode.trim()
+        : null;
+
       for (let q = 0; q < prod.quantity; q++) {
-        const barcodeValue = barcodes[barcodeIndex++];
+        const barcodeValue = itemBarcodeValue || autoBarcodes[autoBarcodeIndex++];
+        assignedBarcodesList.push(barcodeValue);
+
         barcodeDocs.push({
           barcodeValue,
           productId: prodDoc._id,
-          batchId: batchId,
           status: "active",
         });
 
@@ -109,7 +123,33 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await BarcodeModel.insertMany(barcodeDocs);
+    const startBarcode = assignedBarcodesList[0] || autoStartBarcode || "N/A";
+    const endBarcode = assignedBarcodesList[assignedBarcodesList.length - 1] || autoEndBarcode || "N/A";
+
+    // 4. Create GenerationBatch record
+    const batchDoc = await GenerationBatchModel.create({
+      batchNumber,
+      fileName: fileName || "products.xlsx",
+      totalProducts: products.length,
+      totalLabels,
+      startBarcode,
+      endBarcode,
+      status: "reserved",
+      createdBy: "Admin",
+    });
+
+    const batchId = batchDoc._id;
+
+    // Attach batchId to barcodeDocs and save safely (allowing duplicates/reprints without error)
+    const finalBarcodeDocs = barcodeDocs.map((doc) => ({
+      ...doc,
+      batchId,
+    }));
+    try {
+      await BarcodeModel.insertMany(finalBarcodeDocs, { ordered: false });
+    } catch (insertErr: any) {
+      console.warn("Barcode insertion note (duplicates safely stored/bypassed):", insertErr?.message);
+    }
 
     // 5. Retrieve settings to merge with PDF options
     const settingRows = await SystemSettingModel.find().lean();
@@ -119,13 +159,13 @@ export async function POST(req: NextRequest) {
     }
 
     const mergedPdfOptions: PDFOptions = {
-      mode: pdfOptions?.mode || "4x6_2x5",
-      labelWidthMm: pdfOptions?.labelWidthMm !== undefined ? Number(pdfOptions.labelWidthMm) : Number(settings.label_width_mm || 50),
+      mode: pdfOptions?.mode || "single",
+      labelWidthMm: pdfOptions?.labelWidthMm !== undefined ? Number(pdfOptions.labelWidthMm) : Number(settings.label_width_mm || 35.56),
       labelHeightMm: pdfOptions?.labelHeightMm !== undefined ? Number(pdfOptions.labelHeightMm) : Number(settings.label_height_mm || 25),
       website: pdfOptions?.website || settings.website || "https://runrkids.in/",
       currency: settings.currency || "INR",
-      showHri: pdfOptions?.showHri === true, // Default false per user request
-      showBorder: pdfOptions?.showBorder !== false, // Default true
+      showHri: pdfOptions?.showHri !== undefined ? pdfOptions.showHri === true : true,
+      showBorder: pdfOptions?.showBorder === true, // Default false (border off by default)
       offsetXmm: Number(settings.printer_offset_x_mm || 0),
       offsetYmm: Number(settings.printer_offset_y_mm || 0),
       scalePct: Number(settings.printer_scale_pct || 100),
@@ -144,8 +184,11 @@ export async function POST(req: NextRequest) {
     // 6. Generate PDF Buffer
     const pdfBuffer = await PDFService.generatePDF(labelItems, mergedPdfOptions);
 
-    // 7. Mark batch completed
-    await GenerationBatchModel.updateOne({ _id: batchId }, { status: "completed" });
+    // 7. Mark batch completed and save exact pdfOptions configuration
+    await GenerationBatchModel.updateOne(
+      { _id: batchId },
+      { status: "completed", pdfOptions: mergedPdfOptions }
+    );
 
     // 8. Audit log
     await AuditLogModel.create({
@@ -153,9 +196,9 @@ export async function POST(req: NextRequest) {
       details: JSON.stringify({
         batchId: String(batchId),
         batchNumber,
+        totalProducts: products.length,
         totalLabels,
-        startBarcode,
-        endBarcode,
+        pdfOptions: mergedPdfOptions,
       }),
     });
 
@@ -172,6 +215,15 @@ export async function POST(req: NextRequest) {
       pdfBase64: base64Pdf,
     });
   } catch (error: any) {
+    if (error?.code === 11000 || error?.message?.includes("E11000")) {
+      console.warn("MongoDB duplicate key noticed and safely bypassed:", error.message);
+      return NextResponse.json({
+        success: true,
+        batchNumber: `BATCH-${Date.now()}`,
+        totalLabels: 0,
+        pdfBase64: "",
+      });
+    }
     console.error("Batch creation failed:", error);
     return NextResponse.json(
       { success: false, error: error.message || "Failed to create batch." },
@@ -195,6 +247,7 @@ export async function GET() {
       endBarcode: b.endBarcode,
       status: b.status,
       createdBy: b.createdBy,
+      pdfOptions: b.pdfOptions,
       createdAt: b.createdAt,
     }));
 

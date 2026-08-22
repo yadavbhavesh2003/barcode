@@ -29,6 +29,7 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then(async (m) => {
       await initDefaultSettings();
+      await syncBarcodeIndexes();
       return m;
     });
   }
@@ -41,6 +42,21 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
   }
 
   return cached.conn;
+}
+
+// Ensure unique index is dropped so duplicate SKUs / custom barcodes print without collision
+async function syncBarcodeIndexes() {
+  try {
+    const collection = BarcodeModel.collection;
+    const indexes = await collection.indexes();
+    for (const idx of indexes) {
+      if (idx.name === "barcodeValue_1" && idx.unique) {
+        await collection.dropIndex("barcodeValue_1");
+      }
+    }
+  } catch (err) {
+    // Collection may not exist yet on initial boot
+  }
 }
 
 // ----------------------------------------------------
@@ -460,24 +476,46 @@ export const SequenceTrackerModel =
 // Seed Default Configurations, Roles, Initial Users & Services
 async function initDefaultSettings() {
   const defaultSettings: Record<string, any> = {
+    website: "https://runrkids.in/",
+    net_quantity: "1U",
+    label_width_mm: "50",
+    label_height_mm: "25",
+    show_border: "false",
+    show_hri: "true",
+    printer_offset_x_mm: "0",
+    printer_offset_y_mm: "0",
+    printer_scale_pct: "100",
+    currency: "INR",
+    currency_symbol: "₹",
+    barcode_height_mm: "6.5",
+    barcode_rotation: "0",
+    layout_preset: "standard",
+    a4_margin_top_mm: "10",
+    a4_margin_left_mm: "10",
+    a4_gap_x_mm: "2",
+    a4_gap_y_mm: "2",
+    a4_columns: "4",
+    a4_rows: "10",
+    store_name: "RUNR KIDS",
     company_name: "RUNR KIDS RETAIL PVT LTD",
     company_tagline: "Quality Kids Wear & Toys",
     company_address: "Shop 12-14, Galleria Mall, Sector 21",
-    company_phone: "+91 98765 43210",
+    company_phone: "+91 9737998216",
     company_email: "support@runrkids.in",
     company_website: "https://runrkids.in/",
     company_gstin: "27AABCU9603R1ZM",
     invoice_prefix: "INV",
     invoice_terms: "1. Goods once sold will only be exchanged within 7 days. 2. No cash refund.",
     allow_negative_stock: false,
-    label_width_mm: "35.56",
-    label_height_mm: "25.4",
-    label_margin_top_mm: "3",
-    label_margin_left_mm: "3",
-    label_gap_v_mm: "3",
-    label_gap_h_mm: "3",
-    currency: "INR",
-    currency_symbol: "₹",
+    whatsapp_mode: "direct", // "direct" (wa.me) | "cloud_api" (Meta Cloud API) | "both"
+    whatsapp_phone_number_id: "",
+    whatsapp_access_token: "",
+    whatsapp_template_name: "bill_receipt",
+    whatsapp_template_lang: "en",
+    whatsapp_default_country_code: "91",
+    whatsapp_custom_greeting: "Thank you for shopping at *RUNR KIDS*!",
+    whatsapp_custom_footer: "🧸 *RUNR KIDS* — Visit us again at https://runrkids.in/",
+    whatsapp_auto_send: "false",
   };
 
   for (const [key, value] of Object.entries(defaultSettings)) {

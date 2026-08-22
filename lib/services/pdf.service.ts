@@ -124,33 +124,61 @@ export class PDFService {
   }
 
   /**
-   * Draw a crisp vector Indian Rupee (₹) symbol in PDF matching Helvetica font weight.
+   * Draw crisp Indian Rupee symbol (₹) vector in jsPDF.
    */
-  static drawRupeeSymbol(doc: jsPDF, x: number, y: number, heightMm = 1.4, isBold = true) {
-    const lineWidth = heightMm * (isBold ? 0.16 : 0.12);
-    doc.setLineWidth(lineWidth);
+  static drawRupeeSymbol(doc: jsPDF, x: number, baselineY: number, sizePt: number): number {
+    const h = sizePt * 0.352778 * 0.72; // cap height in mm
+    const w = h * 0.65;
+    const th = Math.max(0.18, h * 0.13); // stroke thickness in mm
+
+    doc.setLineWidth(th);
     doc.setDrawColor(0, 0, 0);
 
-    const topY = y - heightMm * 0.65;
-    const midY = y - heightMm * 0.35;
-    const botY = y + heightMm * 0.25;
-    const barW = heightMm * 0.52;
+    const topY = baselineY - h + th * 0.4;
+    const barGap = h * 0.28;
+    const midY = topY + barGap;
+    const loopH = h * 0.58;
+    const stemX = x + th * 0.4;
 
     // Top horizontal bar
-    doc.line(x, topY, x + barW, topY);
-    // Middle horizontal bar
-    doc.line(x, midY, x + barW * 0.85, midY);
-    // Vertical stem & upper loop
-    doc.line(x + barW * 0.15, topY, x + barW * 0.15, midY + heightMm * 0.2);
-    doc.line(x + barW * 0.15, midY + heightMm * 0.2, x + barW * 0.55, midY + heightMm * 0.2);
-    // Diagonal leg
-    doc.line(x + barW * 0.2, midY + heightMm * 0.2, x + barW * 0.7, botY);
+    doc.line(x, topY, x + w, topY);
+    // Second horizontal bar
+    doc.line(x, midY, x + w * 0.85, midY);
+
+    // Left vertical stem from top down to loop
+    doc.line(stemX, topY, stemX, topY + loopH);
+
+    // Upper semi-circle / curve
+    const r = (loopH - barGap) / 2;
+    const cx = stemX + w * 0.35;
+    const cy = midY + r;
+    doc.line(stemX, midY, cx, midY);
+    doc.line(cx, midY, x + w * 0.75, cy);
+    doc.line(x + w * 0.75, cy, cx, topY + loopH);
+    doc.line(cx, topY + loopH, stemX, topY + loopH);
+
+    // Diagonal leg down to baseline
+    doc.line(stemX + w * 0.1, topY + loopH - th * 0.3, x + w * 0.9, baselineY - th * 0.2);
+
+    return w + 0.5; // return advance width in mm
   }
 
   /**
-   * Render SALE PRICE in giant bold hero font centered horizontally (no rupee sign).
+   * Draw crisp mini Globe icon vector in jsPDF footer.
    */
-  private static renderSalePriceHero(
+  static drawGlobeIcon(doc: jsPDF, cx: number, cy: number, r: number) {
+    doc.setLineWidth(0.12);
+    doc.setDrawColor(0, 0, 0);
+    doc.circle(cx, cy, r);
+    doc.line(cx - r, cy, cx + r, cy);
+    doc.line(cx, cy - r, cx, cy + r);
+    doc.ellipse(cx, cy, r * 0.5, r);
+  }
+
+  /**
+   * Helper for legacy/alternate layout presets: Sale Price
+   */
+  static renderSalePriceHero(
     doc: jsPDF,
     amount: number,
     centerX: number,
@@ -159,7 +187,7 @@ export class PDFService {
   ) {
     let labelFont = 7.2;
     let priceFont = 11.5;
-    const amountStr = formatAmount(amount); // e.g. "1,020/-"
+    const amountStr = formatAmount(amount);
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(labelFont);
@@ -167,10 +195,8 @@ export class PDFService {
 
     doc.setFontSize(priceFont);
     const priceW = doc.getTextWidth(amountStr);
-
     let totalW = labelW + priceW;
 
-    // Auto-scale if long price
     while (totalW > maxW && priceFont > 7.0) {
       priceFont -= 0.3;
       labelFont -= 0.15;
@@ -182,23 +208,19 @@ export class PDFService {
     }
 
     const startX = centerX - totalW / 2;
-
-    // 1. Draw "SALE PRICE: "
     doc.setFont("helvetica", "bold");
     doc.setFontSize(labelFont);
     doc.text("SALE PRICE: ", startX, y);
 
-    // 2. Draw giant price "1,020/-"
-    const amountX = startX + labelW;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(priceFont);
-    doc.text(amountStr, amountX, y);
+    doc.text(amountStr, startX + labelW, y);
   }
 
   /**
-   * Render MRP centered horizontally (no rupee sign).
+   * Helper for centered MRP (no rupee sign)
    */
-  private static renderCenteredMrp(
+  static renderCenteredMrp(
     doc: jsPDF,
     mrp: number,
     centerX: number,
@@ -206,7 +228,7 @@ export class PDFService {
     maxW: number
   ) {
     let fontSize = 7.5;
-    const amountStr = formatAmount(mrp); // e.g. "1,599/-"
+    const amountStr = formatAmount(mrp);
     const text = `MRP: ${amountStr}`;
 
     doc.setFont("helvetica", "bold");
@@ -237,8 +259,8 @@ export class PDFService {
     const labelHeight = options.labelHeightMm || 25;
     const website = options.website || "https://runrkids.in/";
     const currency = options.currency || "INR";
-    const showHri = options.showHri === true;
-    const showBorder = options.showBorder !== false;
+    const showHri = options.showHri !== false; // Default true per user request
+    const showBorder = options.showBorder === true; // Default false (border off by default unless selected)
     const offsetX = options.offsetXmm || 0;
     const offsetY = options.offsetYmm || 0;
     const barcodeRotation = options.barcodeRotation || 0;
@@ -586,9 +608,9 @@ export class PDFService {
   ) {
     // 0. OUTER ROUNDED BORDER BOX
     if (showBorder) {
-      doc.setLineWidth(w > 80 ? 0.8 : 0.3);
+      doc.setLineWidth(w > 80 ? 0.8 : 0.45);
       doc.setDrawColor(0, 0, 0);
-      doc.roundedRect(x, y, w, h, 1.2, 1.2);
+      doc.roundedRect(x + 0.8, y + 0.8, w - 1.6, h - 1.6, 1.5, 1.5);
     }
 
     if (h > 100 || (w > 80 && h > 80)) {
@@ -608,17 +630,17 @@ export class PDFService {
       // 2. GIANT BARCODE
       const isVertical = barcodeRotation === 90 || barcodeRotation === 270;
       const bcW = isVertical ? 22.0 * (w / 101.6) : Math.min(85.0 * (w / 101.6), contentW - 10);
-      const bcH = (isVertical ? 50.0 : 32.0) * sy;
+      const bcH = (isVertical ? 50.0 : (showHri ? 26.0 : 32.0)) * sy;
       const bcX = x + (w - bcW) / 2;
       const bcY = y + 26.0 * sy;
       doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
 
       // 3. HRI NUMBER
       if (showHri) {
-        doc.setFont("courier", "bold");
-        doc.setFontSize(Math.min(12.0, Math.max(8.0, 12.0 * (w / 101.6))));
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(Math.min(10.0, Math.max(7.0, 10.0 * (w / 101.6))));
         const spacedBarcode = item.barcode.split("").join(" ");
-        doc.text(spacedBarcode, x + w / 2, y + 64.0 * sy, { align: "center" });
+        doc.text(spacedBarcode, x + w / 2, bcY + bcH + 5.5 * sy, { align: "center" });
       }
 
       // 4. SALE PRICE HERO
@@ -809,7 +831,7 @@ export class PDFService {
       doc.setFontSize(5.8);
       doc.text(website, x + w - marginX, y + 21.2, { align: "right" });
     } else {
-      // "standard" preset (Barcode at top centered)
+      // "standard" preset (Barcode at top centered - Clean Reverted Design)
       const contentW = w - marginX * 2;
 
       // 1. PRODUCT TITLE (Top Centered - Auto-Scaled)
@@ -817,7 +839,7 @@ export class PDFService {
       doc.setTextColor(0, 0, 0);
 
       const titleStr = item.productName.toUpperCase();
-      let fontSize = 6.5;
+      let fontSize = w <= 40 ? 6.2 : 6.8;
       doc.setFontSize(fontSize);
       let textW = doc.getTextWidth(titleStr);
 
@@ -829,47 +851,46 @@ export class PDFService {
 
       doc.text(titleStr, x + w / 2, y + 2.5, { align: "center" });
 
-      // 2. BARCODE IMAGE (Moved down for clean top spacing)
+      // 2. BARCODE IMAGE & HRI NUMBER
       const isVertical = barcodeRotation === 90 || barcodeRotation === 270;
-      const bcW = isVertical ? 5.5 : Math.min(38.0, contentW);
-      const bcH = isVertical ? 8.5 : 4.4;
+      const bcW = isVertical ? 5.5 : Math.min(34.0, contentW);
+      const bcH = isVertical ? 8.5 : (showHri ? 3.0 : 4.4);
       const bcX = x + (w - bcW) / 2;
-      const bcY = y + 4.2;
+      const bcY = y + 3.4;
 
       doc.addImage(barcodeImg, "PNG", bcX, bcY, bcW, bcH);
 
-      // 3. HRI NUMBER
+      // 3. PROFESSIONAL BARCODE NUMBER (Crisp, perfectly centered, zero overlap)
       if (showHri) {
-        doc.setFont("courier", "bold");
-        doc.setFontSize(5.5);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(5.0);
+        doc.setTextColor(0, 0, 0);
         const spacedBarcode = item.barcode.split("").join(" ");
-        doc.text(spacedBarcode, x + w / 2, y + 9.6, { align: "center" });
+        doc.text(spacedBarcode, x + w / 2, y + 8.2, { align: "center" });
       }
 
-      // 4. SALE PRICE HERO SECTION
-      this.renderSalePriceHero(doc, item.salesPrice, x + w / 2, y + 13.5, contentW);
+      // 4. SALE PRICE HERO SECTION (Centered, no rupee symbol)
+      this.renderSalePriceHero(doc, item.salesPrice, x + w / 2, y + 12.8, contentW);
 
-      // 5. HORIZONTAL SEPARATOR LINE #1
+      // 5. HORIZONTAL SEPARATOR LINE #1 (Under SALE PRICE)
       doc.setLineWidth(0.12);
       doc.setDrawColor(40, 40, 40);
-      doc.line(x + marginX, y + 14.7, x + w - marginX, y + 14.7);
+      doc.line(x + marginX, y + 14.2, x + w - marginX, y + 14.2);
 
-      // 6. MRP SECTION
-      this.renderCenteredMrp(doc, item.mrp, x + w / 2, y + 17.2, contentW);
+      // 6. MRP SECTION (Centered, no rupee symbol)
+      this.renderCenteredMrp(doc, item.mrp, x + w / 2, y + 17.0, contentW);
 
-      // 7. HORIZONTAL SEPARATOR LINE #2
-      doc.setLineWidth(0.12);
-      doc.setDrawColor(40, 40, 40);
-      doc.line(x + marginX, y + 18.4, x + w - marginX, y + 18.4);
+      // 7. HORIZONTAL SEPARATOR LINE #2 (Under MRP - Last divider line)
+      doc.line(x + marginX, y + 18.2, x + w - marginX, y + 18.2);
 
-      // 8. FOOTER ROW (Positioned cleanly above bottom border line)
+      // 8. FOOTER ROW (No third divider line)
       doc.setFont("helvetica", "bold");
       doc.setFontSize(5.5);
-      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, x + marginX, y + 21.2);
+      doc.text(`NET QTY: ${item.netQuantity || "1U"}`, x + marginX, y + 21.6);
 
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(5.8);
-      doc.text(website, x + w - marginX, y + 21.2, { align: "right" });
+      doc.setFontSize(5.5);
+      doc.text(website, x + w - marginX, y + 21.6, { align: "right" });
     }
   }
 

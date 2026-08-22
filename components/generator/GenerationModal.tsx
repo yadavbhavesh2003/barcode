@@ -26,6 +26,8 @@ interface GenerationModalProps {
     totalLabels: number;
     rows: any[];
   };
+  initialShowHri?: boolean;
+  initialShowBorder?: boolean;
   onSuccess: (batchData: any) => void;
 }
 
@@ -33,14 +35,17 @@ export function GenerationModal({
   isOpen,
   onClose,
   parseResult,
+  initialShowHri = true, // Default enabled per user request
+  initialShowBorder = false, // Default border off unless selected
   onSuccess,
 }: GenerationModalProps) {
   const modalScrollRef = useRef<HTMLDivElement>(null);
 
-  const [pdfMode, setPdfMode] = useState<"thermal2up" | "single" | "a4" | "4x6" | "4x6_grid" | "4x6_2x5">("4x6_2x5");
+  // Default: Standard 1-Up Sticker Roll (2.0" x 1.0" Roll / 50mm x 25mm) as requested
+  const [pdfMode, setPdfMode] = useState<"thermal2up" | "single" | "a4" | "4x6" | "4x6_grid" | "4x6_2x5">("single");
   const [a4Preset, setA4Preset] = useState<"2x5" | "2x4" | "3x8" | "custom">("2x5");
 
-  // Dimension & Grid Parameters
+  // Dimension & Grid Parameters (Default 50mm x 25mm - 2.0" x 1.0" Roll)
   const [labelWidth, setLabelWidth] = useState(50);
   const [labelHeight, setLabelHeight] = useState(25);
   const [columns, setColumns] = useState(2);
@@ -51,8 +56,8 @@ export function GenerationModal({
   const [gapY, setGapY] = useState(3);
   const [barcodeHeight, setBarcodeHeight] = useState(6.5);
 
-  const [showBorder, setShowBorder] = useState(true);
-  const [showHri, setShowHri] = useState(false); // Default false (hidden) per user request
+  const [showBorder, setShowBorder] = useState(initialShowBorder ?? false); // Default false (border OFF)
+  const [showHri, setShowHri] = useState(initialShowHri ?? true); // Barcode Number toggle default true
   const [barcodeRotation, setBarcodeRotation] = useState<0 | 90 | 180 | 270>(0);
   const [layoutPreset, setLayoutPreset] = useState<"standard" | "barcode_bottom" | "vertical_left" | "vertical_right">("standard");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -60,6 +65,14 @@ export function GenerationModal({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedResult, setGeneratedResult] = useState<any | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Sync initial props when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      if (initialShowHri !== undefined) setShowHri(initialShowHri);
+      if (initialShowBorder !== undefined) setShowBorder(initialShowBorder);
+    }
+  }, [isOpen, initialShowHri, initialShowBorder]);
 
   // PDF Preview States — Open & Live by default
   const [isPreviewing, setIsPreviewing] = useState(true);
@@ -121,11 +134,16 @@ export function GenerationModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           products: validRows.map((r) => ({
+            customBarcode: r.customBarcode,
             productName: r.productName,
+            hsn: r.hsn,
             mrp: r.mrp,
             salesPrice: r.salesPrice,
             quantity: r.quantity,
             netQuantity: r.netQuantity,
+            gstAmount: r.gstAmount,
+            gstRate: r.gstRate,
+            amount: r.amount,
           })),
           pdfOptions: getPdfOptionsPayload(),
         }),
@@ -181,11 +199,16 @@ export function GenerationModal({
         fileName: parseResult.fileName,
         pdfOptions: getPdfOptionsPayload(),
         products: validRows.map((r) => ({
+          customBarcode: r.customBarcode,
           productName: r.productName,
+          hsn: r.hsn,
           mrp: r.mrp,
           salesPrice: r.salesPrice,
           quantity: r.quantity,
           netQuantity: r.netQuantity,
+          gstAmount: r.gstAmount,
+          gstRate: r.gstRate,
+          amount: r.amount,
         })),
       };
 
@@ -451,6 +474,59 @@ export function GenerationModal({
                   {parseResult.totalLabels.toLocaleString()}
                 </p>
               </div>
+            </div>
+
+            {/* Universal Feature Toggles: Barcode Number & Border */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3 rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
+              {/* Barcode Number Toggle */}
+              <label className="flex items-center gap-2.5 p-2 rounded-lg border bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 cursor-pointer select-none transition-all hover:border-indigo-400">
+                <input
+                  type="checkbox"
+                  checked={showHri}
+                  onChange={(e) => setShowHri(e.target.checked)}
+                  className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <div>
+                  <div className="text-xs font-bold text-zinc-900 dark:text-white flex items-center gap-1">
+                    Barcode Number
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                      showHri
+                        ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300"
+                        : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                    }`}>
+                      {showHri ? "Enabled" : "Disabled"}
+                    </span>
+                  </div>
+                  <div className="text-[10.5px] text-zinc-500">
+                    Print number text below barcode
+                  </div>
+                </div>
+              </label>
+
+              {/* Outer Border Line Toggle */}
+              <label className="flex items-center gap-2.5 p-2 rounded-lg border bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 cursor-pointer select-none transition-all hover:border-indigo-400">
+                <input
+                  type="checkbox"
+                  checked={showBorder}
+                  onChange={(e) => setShowBorder(e.target.checked)}
+                  className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <div>
+                  <div className="text-xs font-bold text-zinc-900 dark:text-white flex items-center gap-1">
+                    Outer Border Line
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                      showBorder
+                        ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300"
+                        : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                    }`}>
+                      {showBorder ? "Enabled" : "Off (Default)"}
+                    </span>
+                  </div>
+                  <div className="text-[10.5px] text-zinc-500">
+                    Draw cutting border outline
+                  </div>
+                </div>
+              </label>
             </div>
 
             {/* Category 1: Single Thermal Roll Presets (1 Label / Roll - TSC TE244 Hardware Compatible) */}

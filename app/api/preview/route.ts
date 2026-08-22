@@ -4,7 +4,9 @@ import { PDFService, LabelItemData, PDFOptions } from "@/lib/services/pdf.servic
 interface PreviewRequest {
   pdfOptions?: PDFOptions;
   products?: {
+    customBarcode?: string;
     productName: string;
+    hsn?: string;
     mrp: number;
     salesPrice: number;
     quantity: number;
@@ -20,7 +22,7 @@ export async function POST(req: NextRequest) {
     const sampleProducts = products && products.length > 0
       ? products
       : [
-          { productName: "STEERING WHEEL 868", mrp: 1599, salesPrice: 1020, quantity: 2, netQuantity: "1U" },
+          { customBarcode: "14378278", productName: "2.4 WIRELESS VIDEOGAME BLUE", mrp: 4999, salesPrice: 1499, quantity: 2, netQuantity: "1U" },
         ];
 
     const cols = pdfOptions?.a4Columns || 2;
@@ -28,7 +30,7 @@ export async function POST(req: NextRequest) {
     const targetSlots = Math.max(cols * rows, 10);
 
     const labelItems: LabelItemData[] = [];
-    let mockBarcodeNum = 10000001;
+    let mockBarcodeNum = 14378001;
 
     // Collect base products from request
     const baseList: LabelItemData[] = [];
@@ -36,11 +38,11 @@ export async function POST(req: NextRequest) {
       const qty = Math.min(Math.max(1, prod.quantity || 1), targetSlots);
       for (let q = 0; q < qty; q++) {
         baseList.push({
-          productName: prod.productName || "STEERING WHEEL 868",
-          mrp: prod.mrp || 1599,
-          salesPrice: prod.salesPrice || 1020,
+          productName: prod.productName || "2.4 WIRELESS VIDEOGAME BLUE",
+          mrp: prod.mrp || 4999,
+          salesPrice: prod.salesPrice || 1499,
           netQuantity: prod.netQuantity || "1U",
-          barcode: String(mockBarcodeNum++),
+          barcode: prod.customBarcode && prod.customBarcode.trim() !== "" ? prod.customBarcode.trim() : String(mockBarcodeNum++),
         });
       }
     }
@@ -51,7 +53,7 @@ export async function POST(req: NextRequest) {
       const item = baseList[idx % baseList.length];
       labelItems.push({
         ...item,
-        barcode: String(mockBarcodeNum++),
+        barcode: item.barcode || String(mockBarcodeNum++),
       });
       idx++;
     }
