@@ -204,7 +204,20 @@ export class ExcelService {
 
       // 7. GST Rate
       const rawGstRate = getVal(["GST Rate", "Tax Rate", "GST %", "Tax %", "Rate %"]);
-      const gstRate = rawGstRate !== undefined && rawGstRate !== null ? String(rawGstRate).trim() : undefined;
+      let gstRate: string | undefined = undefined;
+      if (rawGstRate !== undefined && rawGstRate !== null) {
+        const cleaned = String(rawGstRate).trim();
+        const num = parseFloat(cleaned.replace(/[^0-9.]/g, ""));
+        if (!isNaN(num)) {
+          if (num > 0 && num < 1) {
+            gstRate = `${Math.round(num * 100)}%`;
+          } else {
+            gstRate = `${num}%`;
+          }
+        } else {
+          gstRate = cleaned.includes("%") ? cleaned : `${cleaned}%`;
+        }
+      }
 
       // 8. Amount
       const rawAmt = getVal(["Amount", "Total Amount", "Net Amount", "Total"]);

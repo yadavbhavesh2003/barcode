@@ -91,13 +91,13 @@ export class InvoicePDFService {
     const storePhone = data.storePhone || "+91 98765 43210";
     const invoiceDate = data.createdAt
       ? new Date(data.createdAt).toLocaleString("en-IN", {
-          day: "numeric",
-          month: "numeric",
-          year: "numeric",
-          hour: "numeric",
-          minute: "numeric",
-          hour12: true,
-        })
+        day: "numeric",
+        month: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        hour12: true,
+      })
       : new Date().toLocaleString("en-IN");
 
     // 1. Outer Frame Border
@@ -118,7 +118,8 @@ export class InvoicePDFService {
     doc.setFontSize(8.0);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(203, 213, 225);
-    doc.text(`Contact: ${storePhone} | Web: ${storeWebsite}`, 15, 26.5);
+    // doc.text(`Contact: ${storePhone} | Web: ${storeWebsite}`, 15, 26.5);
+    doc.text(`Web: ${storeWebsite}`, 15, 26.5);
 
     // Estimate Title on Right
     doc.setTextColor(255, 255, 255);
@@ -374,13 +375,13 @@ export class InvoicePDFService {
     const storeWebsite = data.storeWebsite || "https://runrkids.in/";
     const invoiceDate = data.createdAt
       ? new Date(data.createdAt).toLocaleString("en-IN", {
-          day: "numeric",
-          month: "numeric",
-          year: "numeric",
-          hour: "numeric",
-          minute: "numeric",
-          hour12: true,
-        })
+        day: "numeric",
+        month: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        hour12: true,
+      })
       : new Date().toLocaleString("en-IN");
 
     const subtotal = data.items.reduce((s, i) => s + (Number(i.totalAmount) || Number(i.salesPrice) * i.quantity || 0), 0);

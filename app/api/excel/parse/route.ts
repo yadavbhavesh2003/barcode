@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
     // Audit log
     await AuditLogModel.create({
       action: "Excel Uploaded",
+      entity: "EXCEL_BATCH",
       details: JSON.stringify({
         fileName: file.name,
         totalRows: parseResult.totalRows,

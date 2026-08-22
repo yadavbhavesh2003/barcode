@@ -8,48 +8,66 @@ export async function GET(req: NextRequest) {
     await connectToDatabase();
     const { searchParams } = new URL(req.url);
     const filterType = searchParams.get("filter") || "all"; // "all", "low_stock", "out_of_stock"
-    const query = searchParams.get("query") || "";
+    const query = (
+      searchParams.get("query") ||
+      searchParams.get("search") ||
+      searchParams.get("q") ||
+      ""
+    ).trim();
     const page = parseInt(searchParams.get("page") || "1", 10);
-    const limit = parseInt(searchParams.get("limit") || "25", 10);
+    const limit = parseInt(searchParams.get("limit") || "100", 10);
 
-    const match: any = { status: "active" };
+    const conditions: any[] = [{ status: { $ne: "archived" } }];
 
     if (query) {
-      match.$or = [
-        { name: { $regex: query.trim(), $options: "i" } },
-        { itemNumber: { $regex: query.trim(), $options: "i" } },
-        { barcodeNumber: { $regex: query.trim(), $options: "i" } },
-      ];
+      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(escaped, "i");
+      conditions.push({
+        $or: [
+          { name: regex },
+          { shortName: regex },
+          { itemNumber: regex },
+          { barcodeNumber: regex },
+          { customBarcode: regex },
+          { sku: regex },
+          { category: regex },
+          { brand: regex },
+        ],
+      });
     }
 
     if (filterType === "low_stock") {
-      match.$expr = { $lte: ["$currentStock", "$minStock"] };
+      conditions.push({
+        $or: [{ currentStock: { $lte: 1 } }, { currentStock: { $exists: false } }],
+      });
     } else if (filterType === "out_of_stock") {
-      match.currentStock = { $lte: 0 };
+      conditions.push({ currentStock: { $lte: 0 } });
     }
 
+    const match: any = conditions.length > 1 ? { $and: conditions } : conditions[0];
+
     const skip = (page - 1) * limit;
-    const [products, total, stats] = await Promise.all([
-      ProductModel.find(match).sort({ currentStock: 1 }).skip(skip).limit(limit),
+    const [products, total, allProdsForStats] = await Promise.all([
+      ProductModel.find(match).sort({ currentStock: 1, _id: -1 }).skip(skip).limit(limit).lean(),
       ProductModel.countDocuments(match),
-      ProductModel.aggregate([
-        { $match: { status: "active" } },
-        {
-          $group: {
-            _id: null,
-            totalUnits: { $sum: "$currentStock" },
-            totalValuation: { $sum: { $multiply: ["$currentStock", "$sellingPrice"] } },
-            lowStockCount: {
-              $sum: {
-                $cond: [{ $lte: ["$currentStock", "$minStock"] }, 1, 0],
-              },
-            },
-          },
-        },
-      ]),
+      ProductModel.find({ status: { $ne: "archived" } }).lean(),
     ]);
 
-    const statSummary = stats[0] || { totalUnits: 0, totalValuation: 0, lowStockCount: 0 };
+    let totalUnits = 0;
+    let totalValuation = 0;
+    let lowStockCount = 0;
+
+    for (const p of allProdsForStats as any[]) {
+      const stock = Number(p.currentStock || 0);
+      const price = Number(p.salesPrice || p.sellingPrice || p.mrp || 0);
+      totalUnits += stock;
+      totalValuation += stock * price;
+      if (stock <= 1) {
+        lowStockCount++;
+      }
+    }
+
+    const statSummary = { totalUnits, totalValuation, lowStockCount };
 
     return sendSuccess(
       {

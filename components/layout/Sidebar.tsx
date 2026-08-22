@@ -85,9 +85,8 @@ export function Sidebar({
       title: "MAIN",
       items: [
         { href: "/", label: "Dashboard", icon: LayoutDashboard, module: "dashboard" },
-        { href: "/pos", label: "POS Billing", icon: ShoppingCart, module: "pos", highlight: true, shortcut: "F8" },
-        { href: "/products", label: "Products", icon: Package, module: "products" },
-        { href: "/services", label: "Services", icon: Wrench, module: "services" },
+        { href: "/billing", label: "POS Billing", icon: ShoppingCart, module: "pos", highlight: true, shortcut: "F8" },
+        { href: "/generator", label: "Label Generator", icon: Barcode, module: "barcodes" },
         {
           href: "/inventory",
           label: "Inventory / Stock",
@@ -95,15 +94,17 @@ export function Sidebar({
           module: "inventory",
           badge: lowStockCount > 0 ? lowStockCount : undefined,
         },
+        { href: "/products", label: "Products Catalog", icon: Package, module: "products" },
+        { href: "/services", label: "Services Master", icon: Wrench, module: "services" },
+        { href: "/history", label: "Invoices & History", icon: Receipt, module: "invoices" },
         { href: "/customers", label: "Customers", icon: Users, module: "customers" },
-        { href: "/invoices", label: "Invoices", icon: Receipt, module: "invoices" },
-        { href: "/scanner", label: "Scanner", icon: ScanLine, module: "scanner" },
+        { href: "/search", label: "Barcode Search", icon: ScanLine, module: "barcodes" },
       ],
     },
     {
       title: "OPERATIONS",
       items: [
-        { href: "/barcodes", label: "Labels & Codes", icon: Barcode, module: "barcodes" },
+        { href: "/scanner", label: "Scan Terminal", icon: ScanLine, module: "scanner" },
         { href: "/reports", label: "Reports & Analytics", icon: BarChart3, module: "reports" },
         { href: "/audit", label: "Audit Logs", icon: ShieldCheck, module: "audit" },
       ],
@@ -141,7 +142,11 @@ export function Sidebar({
             const isActive =
               item.href === "/"
                 ? pathname === "/"
-                : pathname.startsWith(item.href);
+                : pathname === item.href ||
+                  pathname.startsWith(item.href + "/") ||
+                  (item.href === "/billing" && (pathname === "/pos" || pathname.startsWith("/pos/"))) ||
+                  (item.href === "/history" && (pathname === "/invoices" || pathname.startsWith("/invoices/"))) ||
+                  (item.href === "/generator" && (pathname === "/barcodes" || pathname.startsWith("/barcodes/")));
 
             return (
               <Link
@@ -151,7 +156,7 @@ export function Sidebar({
                 title={isCollapsed ? item.label : undefined}
                 className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition-all duration-150 ${
                   isActive
-                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/25 font-bold"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/25 font-bold ring-1 ring-indigo-500/30"
                     : item.highlight
                     ? "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400"
                     : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"

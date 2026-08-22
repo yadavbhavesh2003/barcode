@@ -137,7 +137,7 @@ export function Header({
 
         {/* POS Fast Trigger */}
         <Link
-          href="/pos"
+          href="/billing"
           className="hidden md:flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-xs shadow-emerald-600/20 active:scale-95 transition-all"
         >
           <Zap className="h-3.5 w-3.5 text-amber-200 fill-amber-200" />

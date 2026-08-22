@@ -84,7 +84,7 @@ export interface INotification {
   title: string;
   message: string;
   type: "info" | "warning" | "error" | "success";
-  category: "stock" | "invoice" | "system" | "security";
+  category: "stock" | "invoice" | "system" | "security" | "sales" | "inventory" | string;
   isRead: boolean;
   link?: string;
   createdAt: Date;
@@ -318,8 +318,35 @@ export interface IInvoice {
   
   billedBy: string;
   invoiceDate: Date;
+  
+  // Revision & Audit Traceability
+  revisionCount?: number;
+  isRevised?: boolean;
+  revisedAt?: Date;
+  revisedBy?: string;
+  revisions?: IInvoiceRevision[];
+  
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+export interface IInvoiceRevision {
+  revisionNumber: number;
+  revisedAt: Date;
+  revisedBy: string;
+  reason?: string;
+  previousItems: IInvoiceItem[];
+  previousSubtotal: number;
+  previousDiscount: number;
+  previousGrandTotal: number;
+  previousTotalQuantity: number;
+  stockAdjustments?: {
+    productId: string;
+    productName: string;
+    oldQuantity: number;
+    newQuantity: number;
+    deltaQuantity: number;
+  }[];
 }
 
 export interface IPrintPreset {

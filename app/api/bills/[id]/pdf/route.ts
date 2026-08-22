@@ -13,7 +13,10 @@ export async function GET(
 
     await connectToDatabase();
 
-    const invoice = await InvoiceModel.findById(id).lean();
+    const invoice: any =
+      (await InvoiceModel.findById(id).lean().catch(() => null)) ||
+      (await InvoiceModel.findOne({ invoiceNumber: id }).lean());
+
     if (!invoice) {
       return NextResponse.json(
         { success: false, error: "Invoice not found." },
@@ -21,7 +24,7 @@ export async function GET(
       );
     }
 
-    const effectiveFormat = searchParams.get("format") || (invoice as any).pdfFormat || "a4";
+    const effectiveFormat = searchParams.get("format") || invoice.pdfFormat || "a4";
 
     const settingRows = await SystemSettingModel.find().lean();
     const settings: Record<string, string> = {};
@@ -31,17 +34,17 @@ export async function GET(
 
     const invoiceData: InvoiceData = {
       invoiceNumber: invoice.invoiceNumber,
-      customerName: invoice.customerName,
-      customerPhone: invoice.customerPhone,
-      paymentMode: invoice.paymentMode,
-      createdAt: invoice.createdAt,
+      customerName: invoice.customerName || invoice.customer?.name || "Walk-in Customer",
+      customerPhone: invoice.customerPhone || invoice.customer?.mobile || "",
+      paymentMode: invoice.paymentMode || (invoice.payments && invoice.payments[0]?.method) || "Cash",
+      createdAt: invoice.createdAt || invoice.invoiceDate || new Date(),
       items: invoice.items as any,
-      subtotal: invoice.subtotal,
-      discount: invoice.discount || 0,
-      otherCharges: (invoice as any).otherCharges || 0,
+      subtotal: invoice.subtotal || invoice.grandTotal,
+      discount: invoice.discount || invoice.totalDiscount || 0,
+      otherCharges: invoice.otherCharges || 0,
       grandTotal: invoice.grandTotal,
       storeWebsite: settings.website || "https://runrkids.in/",
-      storeName: "RUNR KIDS",
+      storeName: settings.store_name || "RUNR KIDS",
     };
 
     let pdfBytes: Uint8Array;

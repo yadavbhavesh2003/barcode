@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useToast } from "@/lib/context/ToastContext";
 import {
   Boxes,
   ArrowDownUp,
@@ -12,9 +13,11 @@ import {
   RefreshCw,
   X,
   History,
+  Loader2,
 } from "lucide-react";
 
 export default function InventoryPage() {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<"stock" | "transactions">("stock");
   const [products, setProducts] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -31,27 +34,34 @@ export default function InventoryPage() {
   const [adjustReason, setAdjustReason] = useState("");
   const [isAdjusting, setIsAdjusting] = useState(false);
 
+  // Live debounced search effect
   useEffect(() => {
-    if (activeTab === "stock") {
-      fetchStock();
-    } else {
-      fetchTransactions();
-    }
-  }, [activeTab, filterType]);
+    const timer = setTimeout(() => {
+      fetchStock(searchQuery, filterType);
+    }, 250);
 
-  const fetchStock = async () => {
+    return () => clearTimeout(timer);
+  }, [searchQuery, filterType]);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, []);
+
+  const fetchStock = async (query: string = searchQuery, filter: string = filterType) => {
     try {
       setLoading(true);
-      const res = await fetch(
-        `/api/v1/inventory?filter=${filterType}&query=${encodeURIComponent(searchQuery)}`
-      );
+      const url = new URL("/api/v1/inventory", window.location.origin);
+      if (filter !== "all") url.searchParams.set("filter", filter);
+      if (query.trim()) url.searchParams.set("query", query.trim());
+
+      const res = await fetch(url.toString());
       const json = await res.json();
       if (json.success) {
-        setProducts(json.data.products || []);
-        if (json.data.stats) setStats(json.data.stats);
+        setProducts(json.data?.products || (Array.isArray(json.data) ? json.data : []));
+        if (json.data?.stats) setStats(json.data.stats);
       }
-    } catch (e) {
-      console.error("Inventory stock fetch error:", e);
+    } catch (err) {
+      console.error("Failed to fetch inventory:", err);
     } finally {
       setLoading(false);
     }
@@ -59,22 +69,26 @@ export default function InventoryPage() {
 
   const fetchTransactions = async () => {
     try {
-      setLoading(true);
-      const res = await fetch(`/api/v1/inventory/transactions?limit=50`);
+      const res = await fetch("/api/v1/inventory/transactions?limit=50");
       const json = await res.json();
       if (json.success) {
-        setTransactions(json.data || []);
+        setTransactions(Array.isArray(json.data) ? json.data : json.data?.transactions || []);
       }
-    } catch (e) {
-      console.error("Transactions fetch error:", e);
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error("Failed to fetch transactions:", err);
+      setTransactions([]);
     }
   };
 
-  const handleAdjustSubmit = async (e: React.FormEvent) => {
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchStock();
+  };
+
+  const handleAdjustStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct || !adjustQty) return;
+
     try {
       setIsAdjusting(true);
       const res = await fetch("/api/v1/inventory", {
@@ -90,16 +104,18 @@ export default function InventoryPage() {
       });
       const json = await res.json();
       if (json.success) {
+        toast.success(`Stock adjusted for '${selectedProduct.name}'!`, "Stock Updated");
         setIsAdjustModalOpen(false);
         setSelectedProduct(null);
         setAdjustQty("");
         setAdjustReason("");
         fetchStock();
+        fetchTransactions();
       } else {
-        alert(json.error?.message || "Adjustment failed");
+        toast.error(json.error?.message || "Adjustment failed");
       }
     } catch (e: any) {
-      alert("Error: " + e.message);
+      toast.error("Error: " + e.message);
     } finally {
       setIsAdjusting(false);
     }
@@ -182,16 +198,31 @@ export default function InventoryPage() {
           <div className="space-y-4">
             {/* Filter pills */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-zinc-200/80 bg-white p-3.5 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900">
-              <div className="relative w-full sm:w-80">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                <input
-                  type="text"
-                  placeholder="Filter stock by name or code..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && fetchStock()}
-                  className="w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-10 pr-4 py-2 text-xs outline-none focus:border-indigo-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
-                />
+              <div className="flex items-center gap-2.5 w-full sm:w-auto flex-1 max-w-md">
+                <div className="relative w-full">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                  <input
+                    type="text"
+                    placeholder="Live search stock by name, code, SKU, or category..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-10 pr-9 py-2 text-xs outline-none focus:border-indigo-600 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-white transition-all"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                      title="Clear Search"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {loading && (
+                  <Loader2 className="h-4 w-4 animate-spin text-indigo-600 shrink-0" />
+                )}
               </div>
 
               <div className="flex items-center gap-1.5">
@@ -224,7 +255,8 @@ export default function InventoryPage() {
                     <th className="py-3 px-4">Product Name</th>
                     <th className="py-3 px-4 text-center">Current Stock</th>
                     <th className="py-3 px-4 text-center">Min Level</th>
-                    <th className="py-3 px-4 text-right">Unit Value</th>
+                    <th className="py-3 px-4 text-right">MRP</th>
+                    <th className="py-3 px-4 text-right">Selling Price</th>
                     <th className="py-3 px-4 text-right">Stock Valuation</th>
                     <th className="py-3 px-4 text-right">Action</th>
                   </tr>
@@ -232,46 +264,57 @@ export default function InventoryPage() {
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 text-xs">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-zinc-400">
+                      <td colSpan={8} className="py-12 text-center text-zinc-400">
                         <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />
                         Loading stock...
                       </td>
                     </tr>
                   ) : products.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-zinc-400">
+                      <td colSpan={8} className="py-12 text-center text-zinc-400">
                         No inventory matching current filters.
                       </td>
                     </tr>
                   ) : (
-                    products.map((p) => (
-                      <tr key={p._id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30">
-                        <td className="py-3.5 px-4 font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                          {p.itemNumber || p.barcodeNumber}
-                        </td>
-                        <td className="py-3.5 px-4 font-semibold text-zinc-900 dark:text-white">
-                          {p.name}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span
-                            className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-bold ${
-                              p.currentStock <= p.minStock
-                                ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400"
-                                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
-                            }`}
-                          >
-                            {p.currentStock} {p.unitOfMeasure || "PCS"}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center text-zinc-400 font-mono">
-                          {p.minStock}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          {formatCurrency(p.sellingPrice)}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-bold text-zinc-900 dark:text-white">
-                          {formatCurrency(p.currentStock * p.sellingPrice)}
-                        </td>
+                    products.map((p) => {
+                      const mrp = Number(p.mrp || 0);
+                      const unitPrice = Number(p.salesPrice || p.sellingPrice || mrp || 0);
+                      const currentStock = Number(p.currentStock || 0);
+                      return (
+                        <tr key={p._id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30">
+                          <td className="py-3.5 px-4 font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                            {p.itemNumber || p.barcodeNumber || p.customBarcode || "ITEM"}
+                          </td>
+                          <td className="py-3.5 px-4 font-semibold text-zinc-900 dark:text-white">
+                            {p.name}
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <span
+                              className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-bold ${
+                                currentStock <= 0
+                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400"
+                                  : currentStock === 1
+                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 ring-1 ring-amber-500/30"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                              }`}
+                            >
+                              {currentStock <= 0
+                                ? "0 (Out of Stock)"
+                                : `${currentStock} ${p.unitOfMeasure || p.netQuantity || "Units"}`}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-center text-zinc-400 font-mono">
+                            1 Unit
+                          </td>
+                          <td className="py-3.5 px-4 text-right text-zinc-400 font-mono">
+                            {mrp > 0 ? formatCurrency(mrp) : "—"}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-semibold text-emerald-600 dark:text-emerald-400 font-mono">
+                            {formatCurrency(unitPrice)}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-bold text-zinc-900 dark:text-white font-mono">
+                            {formatCurrency(currentStock * unitPrice)}
+                          </td>
                         <td className="py-3.5 px-4 text-right">
                           <button
                             onClick={() => {
@@ -284,7 +327,8 @@ export default function InventoryPage() {
                           </button>
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -315,14 +359,14 @@ export default function InventoryPage() {
                       Loading ledger transactions...
                     </td>
                   </tr>
-                ) : transactions.length === 0 ? (
+                ) : (transactions || []).length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-12 text-center text-zinc-400">
                       No stock transactions recorded yet.
                     </td>
                   </tr>
                 ) : (
-                  transactions.map((t) => (
+                  (transactions || []).map((t) => (
                     <tr key={t._id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30">
                       <td className="py-3 px-4 text-zinc-400">
                         {new Date(t.createdAt).toLocaleString()}
@@ -365,78 +409,182 @@ export default function InventoryPage() {
 
       {/* MODAL: Adjust Stock */}
       {isAdjustModalOpen && selectedProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-100 pb-2 dark:border-zinc-800">
-              <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
-                Adjust Stock: {selectedProduct.name}
-              </h3>
-              <button onClick={() => setIsAdjustModalOpen(false)}>
-                <X className="h-4 w-4 text-zinc-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-900 p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800">
+              <div>
+                <h3 className="text-base font-bold text-zinc-900 dark:text-white">
+                  Stock Reconciliation & Refill
+                </h3>
+                <p className="text-xs text-zinc-400 font-mono">
+                  Code: {selectedProduct.itemNumber || selectedProduct.barcodeNumber} &bull; {selectedProduct.hsnSac || "HSN: 9503"}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsAdjustModalOpen(false)}
+                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAdjustSubmit} className="space-y-3 text-xs">
+            {/* Product Summary Card */}
+            <div className="rounded-xl border border-zinc-200/70 bg-zinc-50/70 p-3 dark:border-zinc-800/80 dark:bg-zinc-800/40 flex items-center justify-between">
               <div>
-                <p className="text-zinc-500">Current Stock: <strong className="text-zinc-900 dark:text-white">{selectedProduct.currentStock} units</strong></p>
+                <h4 className="text-xs font-bold text-zinc-900 dark:text-white">
+                  {selectedProduct.name}
+                </h4>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  MRP: <strong className="text-zinc-700 dark:text-zinc-300 font-mono">{formatCurrency(selectedProduct.mrp)}</strong> &bull; Selling Price: <strong className="text-emerald-600 dark:text-emerald-400 font-mono">{formatCurrency(selectedProduct.sellingPrice || selectedProduct.salesPrice)}</strong>
+                </p>
               </div>
+              <div className="text-right">
+                <span className="text-[10px] text-zinc-400 uppercase font-semibold block">In Stock</span>
+                <span className="inline-flex rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 font-mono">
+                  {selectedProduct.currentStock} {selectedProduct.unitOfMeasure || "PCS"}
+                </span>
+              </div>
+            </div>
 
+            <form onSubmit={handleAdjustStock} className="space-y-4 text-xs">
+              {/* Adjustment Type */}
               <div>
                 <label className="font-semibold text-zinc-700 dark:text-zinc-300 block mb-1">
-                  Adjustment Type
+                  Adjustment Type *
                 </label>
                 <select
                   value={adjustType}
                   onChange={(e) => setAdjustType(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-200 p-2.5 outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                  className="w-full rounded-xl border border-zinc-200 p-2.5 outline-none focus:border-indigo-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white font-medium"
                 >
-                  <option value="ADJUSTMENT_ADD">Add Stock (+) - Received / Correct Count</option>
-                  <option value="ADJUSTMENT_SUBTRACT">Deduct Stock (-) - Discrepancy / Shrinkage</option>
-                  <option value="PURCHASE">Purchase Order Inflow (+)</option>
-                  <option value="DAMAGE">Damaged / Expired (-)</option>
+                  <option value="PURCHASE">➕ Stock Inflow / Supplier Refill (+)</option>
+                  <option value="ADJUSTMENT_ADD">➕ Manual Stock Addition / Count Correction (+)</option>
+                  <option value="ADJUSTMENT_SUBTRACT">➖ Deduct Stock / Audit Shrinkage (-)</option>
+                  <option value="DAMAGE">❌ Damaged / Expired / Return (-)</option>
                 </select>
               </div>
 
+              {/* Quantity Input + Quick Presets */}
               <div>
-                <label className="font-semibold text-zinc-700 dark:text-zinc-300 block mb-1">
-                  Quantity (Units) *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-semibold text-zinc-700 dark:text-zinc-300">
+                    Quantity (Units) *
+                  </label>
+                  <span className="text-[11px] text-zinc-400">
+                    {["ADJUSTMENT_SUBTRACT", "DAMAGE"].includes(adjustType)
+                      ? `Max deductable: ${selectedProduct.currentStock} units`
+                      : "Enter units to add"}
+                  </span>
+                </div>
                 <input
                   type="number"
                   min="1"
+                  max={["ADJUSTMENT_SUBTRACT", "DAMAGE"].includes(adjustType) ? selectedProduct.currentStock : undefined}
                   required
                   placeholder="e.g. 10"
                   value={adjustQty}
                   onChange={(e) => setAdjustQty(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-200 p-2.5 outline-none focus:border-indigo-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                  className="w-full rounded-xl border border-zinc-200 p-2.5 text-sm font-mono font-bold outline-none focus:border-indigo-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
                 />
+
+                {/* Quick Addition Chips */}
+                {!["ADJUSTMENT_SUBTRACT", "DAMAGE"].includes(adjustType) && (
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <span className="text-[10px] text-zinc-400 font-medium">Quick Presets:</span>
+                    {[5, 10, 25, 50, 100].map((qty) => (
+                      <button
+                        key={qty}
+                        type="button"
+                        onClick={() => setAdjustQty(String(qty))}
+                        className="rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-zinc-600 hover:bg-indigo-50 hover:text-indigo-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 transition-colors"
+                      >
+                        +{qty}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
+              {/* Real-time Calculation & Projection Pill */}
+              {Number(adjustQty) > 0 && (
+                (() => {
+                  const isMinus = ["ADJUSTMENT_SUBTRACT", "DAMAGE"].includes(adjustType);
+                  const delta = isMinus ? -Math.abs(Number(adjustQty)) : Math.abs(Number(adjustQty));
+                  const projectedStock = selectedProduct.currentStock + delta;
+                  const isNegative = projectedStock < 0;
+                  const unitPrice = Number(selectedProduct.sellingPrice || selectedProduct.salesPrice || selectedProduct.mrp || 0);
+
+                  return (
+                    <div
+                      className={`rounded-xl border p-3 text-xs transition-colors ${
+                        isNegative
+                          ? "border-rose-300 bg-rose-50/80 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300"
+                          : "border-indigo-100 bg-indigo-50/60 dark:border-indigo-950/60 dark:bg-indigo-950/30"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-medium">
+                        <span className="text-zinc-500 dark:text-zinc-400">Projected Stock After:</span>
+                        <strong
+                          className={`font-mono text-sm ${
+                            isNegative
+                              ? "text-rose-600 dark:text-rose-400"
+                              : "text-indigo-700 dark:text-indigo-300"
+                          }`}
+                        >
+                          {selectedProduct.currentStock} {isMinus ? "-" : "+"} {Math.abs(Number(adjustQty))} = {projectedStock} units
+                        </strong>
+                      </div>
+
+                      <div className="mt-1.5 flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400 border-t border-zinc-200/50 pt-1.5 dark:border-zinc-800">
+                        <span>Valuation Impact:</span>
+                        <strong className="font-mono text-zinc-900 dark:text-white">
+                          {delta > 0 ? `+${formatCurrency(delta * unitPrice)}` : `-${formatCurrency(Math.abs(delta) * unitPrice)}`}
+                        </strong>
+                      </div>
+
+                      {isNegative && (
+                        <p className="mt-1.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                          ⚠️ Insufficient stock. Maximum deduction allowed is {selectedProduct.currentStock} units.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* Reason for Adjustment */}
               <div>
                 <label className="font-semibold text-zinc-700 dark:text-zinc-300 block mb-1">
-                  Reason for Adjustment
+                  Reference Note / Reason
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Physical inventory count correction"
+                  placeholder="e.g. Physical inventory count correction or supplier invoice #PO-104"
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
                   className="w-full rounded-xl border border-zinc-200 p-2.5 outline-none focus:border-indigo-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
                 <button
                   type="button"
                   onClick={() => setIsAdjustModalOpen(false)}
-                  className="rounded-xl border border-zinc-200 px-4 py-2 font-semibold text-zinc-700"
+                  className="rounded-xl border border-zinc-200 px-4 py-2.5 font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isAdjusting}
-                  className="rounded-xl bg-indigo-600 px-5 py-2 font-bold text-white hover:bg-indigo-500"
+                  disabled={
+                    isAdjusting ||
+                    !adjustQty ||
+                    Number(adjustQty) <= 0 ||
+                    (["ADJUSTMENT_SUBTRACT", "DAMAGE"].includes(adjustType) &&
+                      Number(adjustQty) > selectedProduct.currentStock)
+                  }
+                  className="rounded-xl bg-indigo-600 px-5 py-2.5 font-bold text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-indigo-600/20"
                 >
                   {isAdjusting ? "Saving..." : "Record Transaction"}
                 </button>

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useToast } from "@/lib/context/ToastContext";
 import {
   Receipt,
   Search,
@@ -15,9 +17,15 @@ import {
   FileText,
   Clock,
   ArrowDownLeft,
+  Edit3,
+  History,
+  RotateCcw,
+  Loader2,
 } from "lucide-react";
 
 export default function InvoicesPage() {
+  const router = useRouter();
+  const { toast } = useToast();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [pagination, setPagination] = useState<any>({ page: 1, limit: 15, total: 0, pages: 1 });
   const [searchInvoice, setSearchInvoice] = useState("");
@@ -32,6 +40,7 @@ export default function InvoicesPage() {
   const [cancelReason, setCancelReason] = useState("");
   const [restoreStock, setRestoreStock] = useState(true);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [revisingId, setRevisingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchInvoices(1);
@@ -78,15 +87,16 @@ export default function InvoicesPage() {
       });
       const json = await res.json();
       if (json.success) {
+        toast.success(`Invoice #${selectedInvoice.invoiceNumber} cancelled successfully`, "Invoice Cancelled");
         setIsCancelModalOpen(false);
         setSelectedInvoice(null);
         setCancelReason("");
         fetchInvoices(pagination.page);
       } else {
-        alert(json.error?.message || "Failed to cancel invoice");
+        toast.error(json.error?.message || "Failed to cancel invoice", "Cancellation Error");
       }
     } catch (e: any) {
-      alert("Error: " + e.message);
+      toast.error("Error: " + e.message, "System Error");
     } finally {
       setIsCancelling(false);
     }
@@ -207,7 +217,14 @@ export default function InvoicesPage() {
                   invoices.map((inv) => (
                     <tr key={inv._id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30">
                       <td className="py-3.5 px-4 font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                        {inv.invoiceNumber}
+                        <div className="flex items-center gap-1.5">
+                          <span>{inv.invoiceNumber}</span>
+                          {(inv.isRevised || (inv.revisionCount || 0) > 0) && (
+                            <span className="rounded bg-amber-100 dark:bg-amber-950/80 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-300 ring-1 ring-amber-400/30">
+                              Rev #{inv.revisionCount || 1}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3.5 px-4 text-zinc-500">
                         {new Date(inv.invoiceDate).toLocaleString()}
@@ -251,10 +268,27 @@ export default function InvoicesPage() {
                           <button
                             onClick={() => setSelectedInvoice(inv)}
                             className="p-1 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400"
-                            title="View Invoice Snapshot"
+                            title="View Invoice Snapshot & Audit History"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
+                          {inv.status !== "CANCELLED" && (
+                            <button
+                              disabled={revisingId === inv._id}
+                              onClick={() => {
+                                setRevisingId(inv._id);
+                                router.push(`/billing?revise=${inv._id}`);
+                              }}
+                              className="p-1 text-zinc-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors disabled:opacity-50"
+                              title="Revise / Edit Bill (POS)"
+                            >
+                              {revisingId === inv._id ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
+                              ) : (
+                                <Edit3 className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
                           {inv.status !== "CANCELLED" && (
                             <button
                               onClick={() => {
@@ -392,11 +426,77 @@ export default function InvoicesPage() {
               </div>
             </div>
 
+            {/* Revision & Audit History Timeline */}
+            {selectedInvoice.revisions && selectedInvoice.revisions.length > 0 && (
+              <div className="rounded-xl border border-amber-200/80 bg-amber-50/40 p-3.5 dark:border-amber-900/60 dark:bg-amber-950/20 space-y-2.5 text-xs">
+                <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300">
+                  <History className="h-4 w-4 text-amber-600" />
+                  <span>Revision & Stock Audit Trail ({selectedInvoice.revisions.length} previous revision{selectedInvoice.revisions.length > 1 ? "s" : ""})</span>
+                </div>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {selectedInvoice.revisions.map((rev: any, rIdx: number) => (
+                    <div
+                      key={rIdx}
+                      className="rounded-lg bg-white p-2.5 shadow-2xs border border-amber-100 dark:bg-zinc-800 dark:border-zinc-700 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-amber-700 dark:text-amber-400">
+                          Revision #{rev.revisionNumber} ({rev.reason || "Manual Edit"})
+                        </span>
+                        <span className="text-zinc-400 font-mono">
+                          {new Date(rev.revisedAt).toLocaleString()} by {rev.revisedBy}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-zinc-600 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-900/50 p-1.5 rounded">
+                        <span>Previous Total: <strong>₹{rev.previousGrandTotal?.toLocaleString()}</strong> ({rev.previousTotalQuantity} units)</span>
+                        <span className="font-mono text-zinc-400">{rev.previousItems?.length} items</span>
+                      </div>
+
+                      {rev.stockAdjustments && rev.stockAdjustments.length > 0 && (
+                        <div className="text-[10px] space-y-0.5 pt-0.5">
+                          <p className="font-semibold text-zinc-400 uppercase tracking-wider">Inventory Reconciled:</p>
+                          {rev.stockAdjustments.map((adj: any, aIdx: number) => (
+                            <div key={aIdx} className="flex items-center justify-between font-mono text-zinc-500">
+                              <span>• {adj.productName} (Qty: {adj.oldQuantity} → {adj.newQuantity})</span>
+                              <span className={adj.deltaQuantity > 0 ? "text-rose-600 font-bold" : adj.deltaQuantity < 0 ? "text-emerald-600 font-bold" : ""}>
+                                {adj.deltaQuantity > 0 ? `-${adj.deltaQuantity} deducted` : adj.deltaQuantity < 0 ? `+${Math.abs(adj.deltaQuantity)} returned` : "No change"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Action Buttons */}
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              {selectedInvoice.status !== "CANCELLED" && (
+                <button
+                  disabled={revisingId === selectedInvoice._id}
+                  onClick={() => {
+                    const id = selectedInvoice._id;
+                    setRevisingId(id);
+                    setSelectedInvoice(null);
+                    router.push(`/billing?revise=${id}`);
+                  }}
+                  className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200 transition-colors shadow-2xs disabled:opacity-50"
+                >
+                  {revisingId === selectedInvoice._id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Edit3 className="h-4 w-4" />
+                  )}
+                  Revise This Bill (POS)
+                </button>
+              )}
               <button
                 onClick={() => window.print()}
-                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 shadow-md shadow-indigo-600/20"
               >
                 <Printer className="h-4 w-4" />
                 Print Tax Invoice

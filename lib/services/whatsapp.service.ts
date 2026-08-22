@@ -28,7 +28,7 @@ export interface WhatsAppInvoiceData {
 
 export class WhatsAppService {
   /**
-   * Validates if a phone number is a valid mobile number (10 digits Indian or 10-15 digits international)
+   * Validates if a phone number is a valid 10-digit Indian mobile number (or 0 / 91 prefixed)
    */
   static isValidPhoneNumber(rawPhone: string): boolean {
     if (!rawPhone) return false;
@@ -40,14 +40,13 @@ export class WhatsAppService {
     }
     // 11 digits starting with 0 (e.g. 09876543210)
     if (digitsOnly.length === 11 && digitsOnly.startsWith("0")) {
-      return /^[6-9]/.test(digitsOnly.slice(1));
+      return /^[6-9]\d{9}$/.test(digitsOnly.slice(1));
     }
     // 12 digits with 91 country code (e.g. 919876543210)
     if (digitsOnly.length === 12 && digitsOnly.startsWith("91")) {
-      return /^[6-9]/.test(digitsOnly.slice(2));
+      return /^[6-9]\d{9}$/.test(digitsOnly.slice(2));
     }
-    // Standard E.164 international numbers (10 to 15 digits)
-    return digitsOnly.length >= 10 && digitsOnly.length <= 15;
+    return false;
   }
 
   /**

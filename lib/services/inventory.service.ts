@@ -3,6 +3,7 @@ import {
   ProductModel,
   InventoryTransactionModel,
   SystemSettingModel,
+  NotificationModel,
 } from "../db/mongodb";
 import { InventoryTransactionType } from "../types";
 import { logAuditEvent } from "./audit.service";
@@ -75,6 +76,22 @@ export async function adjustProductStock({
     oldValue: { currentStock: stockBefore },
     newValue: { currentStock: stockAfter, delta, referenceId },
   });
+
+  // Low stock warning alert (only for <= 1 unit)
+  if (isDeduction && stockAfter <= 1) {
+    try {
+      await NotificationModel.create({
+        title: `⚠️ Low Stock Alert: ${product.name}`,
+        message: `${product.name} is down to ${stockAfter} unit(s). Immediate restock required.`,
+        type: "warning",
+        category: "stock",
+        isRead: false,
+        link: `/inventory`,
+      });
+    } catch {
+      // ignore
+    }
+  }
 
   return { product, transaction };
 }

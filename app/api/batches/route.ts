@@ -7,6 +7,7 @@ import {
   BarcodeModel,
   SystemSettingModel,
   AuditLogModel,
+  InventoryTransactionModel,
 } from "@/lib/db/mongodb";
 import { BarcodeService } from "@/lib/services/barcode.service";
 import { PDFService, LabelItemData, PDFOptions } from "@/lib/services/pdf.service";
@@ -75,21 +76,7 @@ export async function POST(req: NextRequest) {
     const batchSeq = String(countToday + 1).padStart(4, "0");
     const batchNumber = `BATCH-${todayStr}-${batchSeq}`;
 
-    // 3. Create Product & Barcode records in bulk (High performance for 1,000+ items)
-    const productDocsToInsert = products.map((prod) => ({
-      name: prod.productName,
-      mrp: prod.mrp,
-      salesPrice: prod.salesPrice,
-      netQuantity: prod.netQuantity || "1U",
-      customBarcode: prod.customBarcode?.trim() || undefined,
-      hsn: prod.hsn || undefined,
-      gstAmount: prod.gstAmount,
-      gstRate: prod.gstRate,
-      amount: prod.amount,
-    }));
-
-    const createdProdDocs = await ProductModel.insertMany(productDocsToInsert);
-
+    // 3. Prepare Barcodes and Label Items (Only saves Batch History, does NOT add to Products Catalog)
     const barcodeDocs = [];
     const labelItems: LabelItemData[] = [];
     const assignedBarcodesList: string[] = [];
@@ -97,8 +84,6 @@ export async function POST(req: NextRequest) {
 
     for (let i = 0; i < products.length; i++) {
       const prod = products[i];
-      const prodDoc = createdProdDocs[i];
-
       const itemBarcodeValue = prod.customBarcode && prod.customBarcode.trim() !== ""
         ? prod.customBarcode.trim()
         : null;
@@ -109,7 +94,7 @@ export async function POST(req: NextRequest) {
 
         barcodeDocs.push({
           barcodeValue,
-          productId: prodDoc._id,
+          productName: prod.productName,
           status: "active",
         });
 
@@ -126,21 +111,21 @@ export async function POST(req: NextRequest) {
     const startBarcode = assignedBarcodesList[0] || autoStartBarcode || "N/A";
     const endBarcode = assignedBarcodesList[assignedBarcodesList.length - 1] || autoEndBarcode || "N/A";
 
-    // 4. Create GenerationBatch record
+    // 4. Create GenerationBatch record for Batch History
     const batchDoc = await GenerationBatchModel.create({
       batchNumber,
-      fileName: fileName || "products.xlsx",
+      fileName: fileName || "labels.xlsx",
       totalProducts: products.length,
       totalLabels,
       startBarcode,
       endBarcode,
-      status: "reserved",
+      status: "completed",
       createdBy: "Admin",
     });
 
     const batchId = batchDoc._id;
 
-    // Attach batchId to barcodeDocs and save safely (allowing duplicates/reprints without error)
+    // Attach batchId to barcodeDocs and save history
     const finalBarcodeDocs = barcodeDocs.map((doc) => ({
       ...doc,
       batchId,
@@ -148,7 +133,7 @@ export async function POST(req: NextRequest) {
     try {
       await BarcodeModel.insertMany(finalBarcodeDocs, { ordered: false });
     } catch (insertErr: any) {
-      console.warn("Barcode insertion note (duplicates safely stored/bypassed):", insertErr?.message);
+      console.warn("Barcode history insertion note:", insertErr?.message);
     }
 
     // 5. Retrieve settings to merge with PDF options

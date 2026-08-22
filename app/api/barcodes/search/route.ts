@@ -19,15 +19,13 @@ export async function GET(req: NextRequest) {
         .sort({ createdAt: -1 })
         .limit(100)
         .populate("productId")
-        .populate("batchId")
         .lean();
 
       const seen = new Set<string>();
       const formatted: any[] = [];
       for (const b of recentBarcodes as any[]) {
         const prod = b.productId || {};
-        const batch = b.batchId || {};
-        const barcodeValue = (b.barcodeValue || prod.customBarcode || "").trim();
+        const barcodeValue = (b.barcodeNumber || b.barcodeValue || prod.customBarcode || prod.barcodeNumber || "").trim();
         if (barcodeValue && !seen.has(barcodeValue)) {
           seen.add(barcodeValue);
           formatted.push({
@@ -36,17 +34,18 @@ export async function GET(req: NextRequest) {
             barcode: barcodeValue,
             status: b.status || "active",
             createdAt: b.createdAt || new Date(),
-            productName: prod.name || "N/A",
-            hsn: prod.hsn || "9503",
+            productName: prod.name || b.productName || "N/A",
+            hsn: prod.hsnSac || prod.hsn || "9503",
             mrp: prod.mrp || 0,
-            salesPrice: prod.salesPrice || 0,
-            netQuantity: prod.netQuantity || "1U",
+            salesPrice: prod.sellingPrice || prod.salesPrice || 0,
+            currentStock: prod.currentStock !== undefined ? prod.currentStock : prod.openingStock || 0,
+            netQuantity: prod.unitOfMeasure || "1U",
             gstAmount: prod.gstAmount,
             gstRate: prod.gstRate,
             amount: prod.amount,
-            batchId: String(batch._id || ""),
-            batchNumber: batch.batchNumber || "N/A",
-            fileName: batch.fileName || "N/A",
+            batchId: "",
+            batchNumber: "N/A",
+            fileName: "N/A",
           });
           if (formatted.length >= 20) break;
         }
@@ -60,12 +59,98 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const trimmedQuery = query.trim();
+    const escapedQuery = trimmedQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const regex = new RegExp(escapedQuery, "i");
 
-    // 1. Search ProductModel by name or customBarcode
+    // 1. Direct exact match check on ProductModel (Fastest & most reliable for POS Scanner)
+    const exactProduct = await ProductModel.findOne({
+      $or: [
+        { barcodeNumber: trimmedQuery },
+        { itemNumber: trimmedQuery },
+        { customBarcode: trimmedQuery },
+        { sku: trimmedQuery },
+      ],
+      status: { $ne: "archived" },
+    }).lean();
+
+    if (exactProduct) {
+      const prodBarcode = (
+        (exactProduct as any).barcodeNumber ||
+        (exactProduct as any).itemNumber ||
+        (exactProduct as any).customBarcode ||
+        trimmedQuery
+      ).trim();
+
+      const exactRecord = {
+        barcodeId: String(exactProduct._id),
+        productId: String(exactProduct._id),
+        barcode: prodBarcode,
+        status: "active",
+        createdAt: exactProduct.createdAt || new Date(),
+        productName: exactProduct.name || "N/A",
+        hsn: exactProduct.hsnSac || (exactProduct as any).hsn || "9503",
+        mrp: exactProduct.mrp || 0,
+        salesPrice: exactProduct.sellingPrice || (exactProduct as any).salesPrice || exactProduct.mrp || 0,
+        currentStock:
+          exactProduct.currentStock !== undefined
+            ? exactProduct.currentStock
+            : exactProduct.openingStock || 0,
+        minStock: 1,
+        netQuantity: exactProduct.unitOfMeasure || "1U",
+        gstAmount: (exactProduct as any).gstAmount,
+        gstRate: exactProduct.gstRate || 5,
+        amount: (exactProduct as any).amount,
+        batchId: "",
+        batchNumber: "Catalog Match",
+        fileName: "N/A",
+      };
+
+      return NextResponse.json({
+        success: true,
+        count: 1,
+        records: [exactRecord],
+        record: exactRecord,
+      });
+    }
+
+    // 2. Search ProductModel by name, shortName, category, brand, or regex on barcodes
+    const searchConditions: any[] = [
+      { barcodeNumber: regex },
+      { itemNumber: regex },
+      { customBarcode: regex },
+      { sku: regex },
+      { name: regex },
+      { shortName: regex },
+      { category: regex },
+      { brand: regex },
+    ];
+
+    // Add individual word tokens
+    const words = trimmedQuery.split(/\s+/).filter((w) => w.length >= 2);
+    for (const w of words) {
+      const wRegex = new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      searchConditions.push({ name: wRegex });
+      searchConditions.push({ category: wRegex });
+    }
+
+    // Add fuzzy match on name for short terms (e.g. babie / barbie)
+    if (trimmedQuery.length >= 3 && trimmedQuery.length <= 15) {
+      try {
+        const fuzzyPattern = trimmedQuery
+          .split("")
+          .map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .join(".*");
+        const fuzzyReg = new RegExp(fuzzyPattern, "i");
+        searchConditions.push({ name: fuzzyReg });
+      } catch (e) {
+        // ignore invalid regex
+      }
+    }
+
     const matchedProducts = await ProductModel.find({
-      $or: [{ name: regex }, { customBarcode: regex }],
+      $or: searchConditions,
+      status: { $ne: "archived" },
     })
       .sort({ createdAt: -1 })
       .limit(60)
@@ -73,28 +158,71 @@ export async function GET(req: NextRequest) {
 
     const matchedProductIds = matchedProducts.map((p: any) => p._id);
 
-    // 2. Search BarcodeModel by barcodeValue or matched product IDs
+    // 3. Search BarcodeModel by barcodeNumber or matched product IDs
     const matchedBarcodes = await BarcodeModel.find({
-      $or: [{ barcodeValue: regex }, { productId: { $in: matchedProductIds } }],
+      $or: [
+        { barcodeNumber: regex },
+        { barcodeValue: regex },
+        { productId: { $in: matchedProductIds } },
+      ],
     })
       .sort({ createdAt: -1 })
       .limit(200)
       .populate("productId")
-      .populate("batchId")
       .lean();
 
     const seenBarcodes = new Set<string>();
     const formattedRecords: any[] = [];
 
-    // Add barcode records (keeping ONLY the latest record for each distinct barcode)
+    // Add matched products first
+    for (const prod of matchedProducts as any[]) {
+      const prodBarcode = (
+        prod.barcodeNumber ||
+        prod.itemNumber ||
+        prod.customBarcode ||
+        prod.sku ||
+        String(prod._id)
+      ).trim();
+
+      if (!seenBarcodes.has(prodBarcode)) {
+        seenBarcodes.add(prodBarcode);
+        formattedRecords.push({
+          barcodeId: String(prod._id || ""),
+          productId: String(prod._id || ""),
+          barcode: prodBarcode,
+          status: "active",
+          createdAt: prod.createdAt || new Date(),
+          productName: prod.name || "N/A",
+          hsn: prod.hsnSac || prod.hsn || "9503",
+          mrp: prod.mrp || 0,
+          salesPrice: prod.sellingPrice || prod.salesPrice || prod.mrp || 0,
+          currentStock:
+            prod.currentStock !== undefined ? prod.currentStock : prod.openingStock || 0,
+          minStock: 1,
+          netQuantity: prod.unitOfMeasure || "1U",
+          gstAmount: prod.gstAmount,
+          gstRate: prod.gstRate || 5,
+          amount: prod.amount,
+          batchId: "",
+          batchNumber: "Product Catalog",
+          fileName: "N/A",
+        });
+      }
+    }
+
+    // Add barcode records
     for (const b of matchedBarcodes as any[]) {
       const prod = b.productId || {};
-      const batch = b.batchId || {};
-      const barcodeValue = (b.barcodeValue || prod.customBarcode || "").trim();
+      const barcodeValue = (
+        b.barcodeNumber ||
+        b.barcodeValue ||
+        prod.customBarcode ||
+        prod.barcodeNumber ||
+        ""
+      ).trim();
 
       if (!barcodeValue) continue;
 
-      // Group & deduplicate by barcodeValue to only keep the latest record
       if (!seenBarcodes.has(barcodeValue)) {
         seenBarcodes.add(barcodeValue);
         formattedRecords.push({
@@ -102,45 +230,20 @@ export async function GET(req: NextRequest) {
           productId: String(prod._id || ""),
           barcode: barcodeValue,
           status: b.status || "active",
-          createdAt: b.createdAt || prod.createdAt || new Date(),
-          productName: prod.name || "N/A",
-          hsn: prod.hsn || "9503",
+          createdAt: b.createdAt || new Date(),
+          productName: prod.name || b.productName || "N/A",
+          hsn: prod.hsnSac || prod.hsn || "9503",
           mrp: prod.mrp || 0,
-          salesPrice: prod.salesPrice || 0,
-          netQuantity: prod.netQuantity || "1U",
+          salesPrice: prod.sellingPrice || prod.salesPrice || prod.mrp || 0,
+          currentStock:
+            prod.currentStock !== undefined ? prod.currentStock : prod.openingStock || 0,
+          minStock: 1,
+          netQuantity: prod.unitOfMeasure || "1U",
           gstAmount: prod.gstAmount,
-          gstRate: prod.gstRate,
-          amount: prod.amount,
-          batchId: String(batch._id || ""),
-          batchNumber: batch.batchNumber || "N/A",
-          fileName: batch.fileName || "N/A",
-        });
-      }
-    }
-
-    // Also include matched products that might not have a BarcodeModel entry
-    for (const prod of matchedProducts as any[]) {
-      const prodBarcode = (prod.customBarcode || "").trim();
-      const key = prodBarcode || String(prod._id);
-
-      if (!seenBarcodes.has(key)) {
-        seenBarcodes.add(key);
-        formattedRecords.push({
-          barcodeId: String(prod._id || ""),
-          productId: String(prod._id || ""),
-          barcode: prodBarcode || "N/A",
-          status: "active",
-          createdAt: prod.createdAt || new Date(),
-          productName: prod.name || "N/A",
-          hsn: prod.hsn || "9503",
-          mrp: prod.mrp || 0,
-          salesPrice: prod.salesPrice || 0,
-          netQuantity: prod.netQuantity || "1U",
-          gstAmount: prod.gstAmount,
-          gstRate: prod.gstRate,
+          gstRate: prod.gstRate || 5,
           amount: prod.amount,
           batchId: "",
-          batchNumber: "Direct Entry",
+          batchNumber: "Barcode Master",
           fileName: "N/A",
         });
       }

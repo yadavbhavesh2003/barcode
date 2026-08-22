@@ -14,7 +14,10 @@ export async function POST(
 
     await connectToDatabase();
 
-    const invoice = await InvoiceModel.findById(id).lean();
+    const invoice: any =
+      (await InvoiceModel.findById(id).lean().catch(() => null)) ||
+      (await InvoiceModel.findOne({ invoiceNumber: id }).lean());
+
     if (!invoice) {
       return NextResponse.json(
         { success: false, error: "Invoice not found." },
@@ -31,7 +34,7 @@ export async function POST(
 
     const config = WhatsAppService.getResolvedConfig(dbSettings);
     const defaultCountryCode = config.defaultCountryCode;
-    const targetPhone = phoneOverride || invoice.customerPhone || "";
+    const targetPhone = phoneOverride || invoice.customerPhone || invoice.customer?.mobile || "";
     const normalizedPhone = WhatsAppService.normalizePhoneNumber(targetPhone, defaultCountryCode);
 
     // Determine base URL for PDF download link
@@ -45,16 +48,16 @@ export async function POST(
     const whatsappData: WhatsAppInvoiceData = {
       invoiceId: String(invoice._id),
       invoiceNumber: invoice.invoiceNumber,
-      customerName: invoice.customerName,
-      customerPhone: invoice.customerPhone,
-      createdAt: invoice.createdAt,
-      paymentMode: invoice.paymentMode,
+      customerName: invoice.customerName || invoice.customer?.name || "Walk-in Customer",
+      customerPhone: invoice.customerPhone || invoice.customer?.mobile || "",
+      createdAt: invoice.createdAt || invoice.invoiceDate || new Date(),
+      paymentMode: invoice.paymentMode || (invoice.payments && invoice.payments[0]?.method) || "Cash",
       items: (invoice.items as any) || [],
-      subtotal: invoice.subtotal,
-      discount: invoice.discount || 0,
-      otherCharges: (invoice as any).otherCharges || 0,
+      subtotal: invoice.subtotal || invoice.grandTotal,
+      discount: invoice.discount || invoice.totalDiscount || 0,
+      otherCharges: invoice.otherCharges || 0,
       grandTotal: invoice.grandTotal,
-      pdfFormat: (invoice as any).pdfFormat || "a4",
+      pdfFormat: invoice.pdfFormat || "a4",
     };
 
     const messageText = WhatsAppService.formatWhatsAppReceiptText(whatsappData, dbSettings, origin);
@@ -144,7 +147,10 @@ export async function GET(
 
     await connectToDatabase();
 
-    const invoice = await InvoiceModel.findById(id).lean();
+    const invoice: any =
+      (await InvoiceModel.findById(id).lean().catch(() => null)) ||
+      (await InvoiceModel.findOne({ invoiceNumber: id }).lean());
+
     if (!invoice) {
       return NextResponse.json(
         { success: false, error: "Invoice not found." },
@@ -159,7 +165,7 @@ export async function GET(
     }
 
     const defaultCountryCode = settings.whatsapp_default_country_code || "91";
-    const targetPhone = phoneOverride || invoice.customerPhone || "";
+    const targetPhone = phoneOverride || invoice.customerPhone || invoice.customer?.mobile || "";
     const normalizedPhone = WhatsAppService.normalizePhoneNumber(targetPhone, defaultCountryCode);
 
     const origin =
@@ -171,16 +177,16 @@ export async function GET(
     const whatsappData: WhatsAppInvoiceData = {
       invoiceId: String(invoice._id),
       invoiceNumber: invoice.invoiceNumber,
-      customerName: invoice.customerName,
-      customerPhone: invoice.customerPhone,
-      createdAt: invoice.createdAt,
-      paymentMode: invoice.paymentMode,
+      customerName: invoice.customerName || invoice.customer?.name || "Walk-in Customer",
+      customerPhone: invoice.customerPhone || invoice.customer?.mobile || "",
+      createdAt: invoice.createdAt || invoice.invoiceDate || new Date(),
+      paymentMode: invoice.paymentMode || (invoice.payments && invoice.payments[0]?.method) || "Cash",
       items: (invoice.items as any) || [],
-      subtotal: invoice.subtotal,
-      discount: invoice.discount || 0,
-      otherCharges: (invoice as any).otherCharges || 0,
+      subtotal: invoice.subtotal || invoice.grandTotal,
+      discount: invoice.discount || invoice.totalDiscount || 0,
+      otherCharges: invoice.otherCharges || 0,
       grandTotal: invoice.grandTotal,
-      pdfFormat: (invoice as any).pdfFormat || "a4",
+      pdfFormat: invoice.pdfFormat || "a4",
     };
 
     const messageText = WhatsAppService.formatWhatsAppReceiptText(whatsappData, settings, origin);

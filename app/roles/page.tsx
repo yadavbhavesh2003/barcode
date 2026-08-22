@@ -15,6 +15,7 @@ import {
   Copy,
   Users,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   X,
   Loader2,
@@ -183,19 +184,30 @@ export default function RolesPage() {
     }
   };
 
-  const handleDeleteRole = async (role: IRole) => {
-    if (!confirm(`Are you sure you want to permanently delete custom role "${role.name}"?`)) return;
+  const [roleToDelete, setRoleToDelete] = useState<IRole | null>(null);
+  const [isDeletingRole, setIsDeletingRole] = useState(false);
+
+  const handleDeleteRole = (role: IRole) => {
+    setRoleToDelete(role);
+  };
+
+  const confirmDeleteRole = async () => {
+    if (!roleToDelete) return;
     try {
-      const res = await fetch(`/api/v1/roles/${role._id}`, { method: "DELETE" });
+      setIsDeletingRole(true);
+      const res = await fetch(`/api/v1/roles/${roleToDelete._id}`, { method: "DELETE" });
       const json = await res.json();
       if (json.success) {
-        setActionSuccess(`Role "${role.name}" deleted.`);
+        setActionSuccess(`Role "${roleToDelete.name}" deleted.`);
+        setRoleToDelete(null);
         fetchRoles();
       } else {
         setActionError(json.error?.message || "Failed to delete role.");
       }
     } catch (err: any) {
       setActionError(err.message || "Network error.");
+    } finally {
+      setIsDeletingRole(false);
     }
   };
 
@@ -503,6 +515,50 @@ export default function RolesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Delete Role Confirmation */}
+      {roleToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-4">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950/70 dark:text-rose-400">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-zinc-900 dark:text-white">
+                  Delete Custom Role
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  Are you sure you want to permanently delete role <strong className="text-zinc-900 dark:text-white">&ldquo;{roleToDelete.name}&rdquo;</strong>?
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
+              Users currently assigned to this role will lose their custom permissions and fall back to the default staff role.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                disabled={isDeletingRole}
+                onClick={() => setRoleToDelete(null)}
+                className="rounded-xl border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingRole}
+                onClick={confirmDeleteRole}
+                className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500 shadow-md shadow-rose-600/20 disabled:opacity-50 transition-all active:scale-95"
+              >
+                {isDeletingRole ? "Deleting..." : "Yes, Delete Role"}
+              </button>
+            </div>
           </div>
         </div>
       )}

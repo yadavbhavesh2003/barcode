@@ -6,6 +6,7 @@ import {
   ServiceModel,
   SequenceTrackerModel,
   CustomerModel,
+  NotificationModel,
 } from "../db/mongodb";
 import {
   calculateLineItem,
@@ -107,6 +108,13 @@ export async function createInvoice(input: CreateInvoiceInput) {
     const service = serviceMap.get(itemInput.productId);
 
     if (product) {
+      const availableStock = product.currentStock || 0;
+      if (itemInput.quantity > availableStock) {
+        throw new Error(
+          `Insufficient stock for '${product.name}'. Only ${availableStock} unit(s) available in stock (cannot bill ${itemInput.quantity} units).`
+        );
+      }
+
       const unitPrice = itemInput.unitPrice !== undefined ? itemInput.unitPrice : (product.sellingPrice ?? (product as any).salesPrice ?? product.mrp ?? 0);
       const discountPct = itemInput.discountPct !== undefined ? itemInput.discountPct : (product.discountPct || 0);
       const mrp = product.mrp || unitPrice;
@@ -121,7 +129,7 @@ export async function createInvoice(input: CreateInvoiceInput) {
         unitPrice,
         quantity: itemInput.quantity,
         discountPct,
-        gstRate: product.gstRate || 5,
+        gstRate: itemInput.gstRate !== undefined ? Number(itemInput.gstRate) : Number(product.gstRate || 0),
         isTaxInclusive: product.isTaxInclusive !== undefined ? product.isTaxInclusive : true,
       });
       (line as any).itemType = "PRODUCT";
@@ -139,7 +147,7 @@ export async function createInvoice(input: CreateInvoiceInput) {
         unitPrice,
         quantity: itemInput.quantity,
         discountPct,
-        gstRate: service.gstRate,
+        gstRate: itemInput.gstRate !== undefined ? Number(itemInput.gstRate) : Number(service.gstRate || 0),
         isTaxInclusive: service.isTaxInclusive,
       });
       (line as any).itemType = "SERVICE";
@@ -159,7 +167,7 @@ export async function createInvoice(input: CreateInvoiceInput) {
         unitPrice,
         quantity: itemInput.quantity || 1,
         discountPct,
-        gstRate: itemInput.gstRate || 5,
+        gstRate: itemInput.gstRate !== undefined ? Number(itemInput.gstRate) : 0,
         isTaxInclusive: true,
       });
       (line as any).itemType = itemInput.itemType || "PRODUCT";
@@ -285,6 +293,24 @@ export async function createInvoice(input: CreateInvoiceInput) {
     },
   });
 
+  // 10. Live Sale Notification for Real-Time Header & Toasts
+  try {
+    const custName = invoice.customer?.name ? `to ${invoice.customer.name}` : "";
+    const itemsSummary = preparedLineItems.slice(0, 2).map((i: any) => `${i.quantity}x ${i.productName}`).join(", ");
+    const moreCount = preparedLineItems.length > 2 ? ` +${preparedLineItems.length - 2} more` : "";
+
+    await NotificationModel.create({
+      title: `🎉 Sale Recorded: ${invoice.invoiceNumber}`,
+      message: `₹${invoice.grandTotal.toLocaleString("en-IN")} received via ${invoice.paymentMethod} ${custName} (${itemsSummary}${moreCount})`,
+      type: "success",
+      category: "sales",
+      isRead: false,
+      link: `/history`,
+    });
+  } catch (notifErr) {
+    console.error("Failed to emit sale notification:", notifErr);
+  }
+
   return invoice;
 }
 
@@ -347,6 +373,278 @@ export async function cancelInvoice({
     oldValue: { status: oldStatus },
     newValue: { status: "CANCELLED", reason, restoreStock },
   });
+
+  return invoice;
+}
+
+export interface ReviseInvoiceInput {
+  invoiceId: string;
+  items: CreateInvoiceItemInput[];
+  customer?: {
+    customerId?: string;
+    name: string;
+    mobile?: string;
+    email?: string;
+    gstin?: string;
+    address?: string;
+  };
+  discount?: number;
+  otherCharges?: number;
+  paymentMethod?: PaymentMethod;
+  paymentMode?: string;
+  reason?: string;
+  revisedBy?: string;
+}
+
+/**
+ * Revises an existing invoice with inventory delta reconciliation, audit snapshots, and ledger records.
+ */
+export async function reviseInvoice(input: ReviseInvoiceInput) {
+  await connectToDatabase();
+
+  const { invoiceId, items, customer, discount = 0, otherCharges = 0, paymentMethod, paymentMode, reason, revisedBy = "Cashier" } = input;
+
+  const invoice = await InvoiceModel.findById(invoiceId);
+  if (!invoice) {
+    throw new Error("Invoice not found");
+  }
+
+  if (invoice.status === "CANCELLED" || invoice.status === "VOID") {
+    throw new Error("Cannot revise a cancelled or voided invoice");
+  }
+
+  if (!items || items.length === 0) {
+    throw new Error("Cannot revise bill to have 0 items. Cancel the bill instead.");
+  }
+
+  // 1. Map old product quantities
+  const oldProductMap = new Map<string, { qty: number; name: string }>();
+  for (const it of invoice.items || []) {
+    if (it.productId && (it as any).itemType !== "SERVICE") {
+      const pid = String(it.productId);
+      const prev = oldProductMap.get(pid) || { qty: 0, name: it.productName };
+      prev.qty += Number(it.quantity || 0);
+      oldProductMap.set(pid, prev);
+    }
+  }
+
+  // 2. Map new product quantities
+  const newProductMap = new Map<string, { qty: number; name: string }>();
+  for (const it of items) {
+    if (it.productId && it.itemType !== "SERVICE") {
+      const pid = String(it.productId);
+      const prev = newProductMap.get(pid) || { qty: 0, name: it.productName || "Product" };
+      prev.qty += Number(it.quantity || 0);
+      newProductMap.set(pid, prev);
+    }
+  }
+
+  // 3. Pre-check stock availability for any positive deltas (additions)
+  const allProductIds = Array.from(new Set([...oldProductMap.keys(), ...newProductMap.keys()]));
+  const dbProducts = await ProductModel.find({ _id: { $in: allProductIds } });
+  const dbProductMap = new Map<string, any>(dbProducts.map((p) => [String(p._id), p]));
+
+  const stockAdjustments: any[] = [];
+
+  for (const pid of allProductIds) {
+    const oldQty = oldProductMap.get(pid)?.qty || 0;
+    const newQty = newProductMap.get(pid)?.qty || 0;
+    const delta = newQty - oldQty; // positive = need more stock, negative = return stock
+
+    const prod = dbProductMap.get(pid);
+    const prodName = prod?.name || oldProductMap.get(pid)?.name || newProductMap.get(pid)?.name || "Item";
+
+    if (delta > 0) {
+      const available = Number(prod?.currentStock ?? prod?.openingStock ?? 0);
+      if (available < delta) {
+        throw new Error(
+          `Insufficient stock for '${prodName}'. Revision requires +${delta} additional units, but only ${available} units available in inventory.`
+        );
+      }
+    }
+
+    stockAdjustments.push({
+      productId: pid,
+      productName: prodName,
+      oldQuantity: oldQty,
+      newQuantity: newQty,
+      deltaQuantity: delta,
+    });
+  }
+
+  // 4. Execute inventory adjustments
+  const nextRevisionNumber = (invoice.revisionCount || 0) + 1;
+
+  for (const adj of stockAdjustments) {
+    if (adj.deltaQuantity > 0) {
+      // Deduct additional stock
+      await adjustProductStock({
+        productId: adj.productId,
+        type: "SALE",
+        quantity: adj.deltaQuantity,
+        referenceId: `${invoice.invoiceNumber} (Rev #${nextRevisionNumber})`,
+        reason: `Bill Revision #${nextRevisionNumber} for ${invoice.invoiceNumber}: added +${adj.deltaQuantity} units of '${adj.productName}'`,
+        createdBy: revisedBy,
+      });
+    } else if (adj.deltaQuantity < 0) {
+      // Restore surplus stock back to inventory
+      const restoreQty = Math.abs(adj.deltaQuantity);
+      await adjustProductStock({
+        productId: adj.productId,
+        type: "RETURN",
+        quantity: restoreQty,
+        referenceId: `${invoice.invoiceNumber} (Rev #${nextRevisionNumber})`,
+        reason: `Bill Revision #${nextRevisionNumber} for ${invoice.invoiceNumber}: returned ${restoreQty} units of '${adj.productName}'`,
+        createdBy: revisedBy,
+      });
+    }
+  }
+
+  // 5. Calculate new line items and totals
+  const preparedLineItems: any[] = [];
+
+  for (const itemInput of items) {
+    const prod = dbProductMap.get(String(itemInput.productId));
+    const isService = itemInput.itemType === "SERVICE";
+
+    const unitPrice = itemInput.unitPrice !== undefined ? Number(itemInput.unitPrice) : Number(prod?.sellingPrice || prod?.mrp || 0);
+    const mrp = itemInput.mrp !== undefined ? Number(itemInput.mrp) : Number(prod?.mrp || unitPrice);
+    const discountPct = Number(itemInput.discountPct || 0);
+    const gstRate = itemInput.gstRate !== undefined ? Number(itemInput.gstRate) : Number(prod?.gstRate || 0);
+    const quantity = Number(itemInput.quantity || 1);
+
+    const productId = itemInput.productId || "item";
+    const barcodeNumber = itemInput.barcodeNumber || prod?.barcodeNumber || prod?.itemNumber || "N/A";
+    const productName = itemInput.productName || prod?.name || "Product";
+    const hsnSac = itemInput.hsnSac || prod?.hsnSac || "9503";
+
+    const calculated = calculateLineItem({
+      productId,
+      barcodeNumber,
+      productName,
+      hsnSac,
+      mrp,
+      unitPrice,
+      quantity,
+      discountPct,
+      gstRate,
+      isTaxInclusive: true,
+    });
+
+    (calculated as any).itemType = isService ? "SERVICE" : "PRODUCT";
+    preparedLineItems.push(calculated);
+  }
+
+  const totals = calculateInvoiceTotals(preparedLineItems);
+  const finalDiscount = Number(discount || 0);
+  const finalOtherCharges = Number(otherCharges || 0);
+  const grandTotal = Math.max(0, Math.round(totals.subtotal - finalDiscount + finalOtherCharges));
+
+  // 6. Save revision snapshot in history
+  const previousSnapshot = {
+    revisionNumber: nextRevisionNumber,
+    revisedAt: new Date(),
+    revisedBy,
+    reason: reason || "POS Bill Revision",
+    previousItems: [...(invoice.items || [])],
+    previousSubtotal: invoice.subtotal,
+    previousDiscount: invoice.discount || invoice.totalDiscount || 0,
+    previousGrandTotal: invoice.grandTotal,
+    previousTotalQuantity: invoice.totalQuantity,
+    stockAdjustments,
+  };
+
+  invoice.set("revisions", [...(invoice.revisions || []), previousSnapshot]);
+
+  // 7. Update active invoice fields
+  const oldGrandTotal = invoice.grandTotal;
+  invoice.set("items", preparedLineItems);
+  invoice.itemsCount = preparedLineItems.length;
+  invoice.totalItems = preparedLineItems.length;
+  invoice.totalQuantity = preparedLineItems.reduce((sum, it) => sum + it.quantity, 0);
+  invoice.subtotal = totals.subtotal;
+  invoice.discount = finalDiscount;
+  invoice.totalDiscount = finalDiscount;
+  invoice.otherCharges = finalOtherCharges;
+  invoice.taxableAmount = totals.taxableAmount;
+  invoice.cgstAmount = totals.cgstAmount;
+  invoice.sgstAmount = totals.sgstAmount;
+  invoice.igstAmount = totals.igstAmount;
+  invoice.totalGst = totals.totalGst;
+  invoice.grandTotal = grandTotal;
+  invoice.paidAmount = grandTotal;
+
+  if (customer?.name) invoice.customerName = customer.name.trim();
+  if (customer?.mobile) invoice.customerPhone = customer.mobile.trim();
+  if (customer) {
+    invoice.customer = {
+      ...(invoice.customer || {}),
+      name: customer.name || invoice.customerName,
+      mobile: customer.mobile || invoice.customerPhone,
+      email: customer.email,
+      gstin: customer.gstin,
+      address: customer.address,
+    };
+  }
+
+  if (paymentMethod) invoice.paymentMethod = paymentMethod;
+  if (paymentMode) invoice.paymentMode = paymentMode;
+
+  invoice.revisionCount = nextRevisionNumber;
+  invoice.isRevised = true;
+  invoice.revisedAt = new Date();
+  invoice.revisedBy = revisedBy;
+
+  await invoice.save();
+
+  // 8. Update or create Customer totalSpend
+  if (customer?.mobile) {
+    const custMobile = customer.mobile.replace(/\D/g, "");
+    if (custMobile.length >= 10) {
+      await CustomerModel.findOneAndUpdate(
+        { mobile: custMobile },
+        {
+          $set: { name: customer.name || "Customer", mobile: custMobile },
+          $inc: { totalSpend: grandTotal - oldGrandTotal },
+        },
+        { upsert: true, returnDocument: "after" }
+      );
+    }
+  }
+
+  // 9. Audit Event & Live Notification
+  await logAuditEvent({
+    userName: revisedBy,
+    action: "INVOICE_REVISED",
+    entity: "Invoice",
+    entityId: invoice._id.toString(),
+    oldValue: {
+      grandTotal: oldGrandTotal,
+      itemsCount: previousSnapshot.previousItems.length,
+      totalQuantity: previousSnapshot.previousTotalQuantity,
+    },
+    newValue: {
+      revisionNumber: nextRevisionNumber,
+      grandTotal,
+      itemsCount: preparedLineItems.length,
+      totalQuantity: invoice.totalQuantity,
+      reason,
+      stockAdjustments,
+    },
+  });
+
+  try {
+    await NotificationModel.create({
+      title: `🔄 Bill Revised: ${invoice.invoiceNumber} (Rev #${nextRevisionNumber})`,
+      message: `Revised by ${revisedBy}. Total: ₹${grandTotal.toLocaleString("en-IN")} (${preparedLineItems.length} items, ${invoice.totalQuantity} units). Inventory ledger reconciled.`,
+      type: "info",
+      category: "sales",
+      isRead: false,
+      link: `/invoices`,
+    });
+  } catch (notifErr) {
+    console.error("Notification trigger error on revision:", notifErr);
+  }
 
   return invoice;
 }

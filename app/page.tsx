@@ -1,59 +1,60 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useAuth } from "@/lib/context/AuthContext";
+import { useToast } from "@/lib/context/ToastContext";
 import {
   TrendingUp,
   Receipt,
   AlertTriangle,
   Package,
   ShoppingCart,
-  PlusCircle,
-  Upload,
   Barcode,
-  ScanLine,
-  ArrowUpRight,
-  Clock,
-  CheckCircle2,
   Boxes,
   IndianRupee,
-  Wrench,
   Users,
-  ShieldCheck,
   Zap,
-  Activity,
   Plus,
   RefreshCw,
   Server,
   ArrowRight,
   X,
+  CreditCard,
+  Smartphone,
+  Banknote,
+  Eye,
+  CheckCircle2,
+  Calendar,
+  Layers,
+  BarChart3,
 } from "lucide-react";
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { toast } = useToast();
   const [period, setPeriod] = useState<"today" | "7d" | "30d" | "this_month" | "all_time">("today");
+  const [trendRange, setTrendRange] = useState<"7d" | "14d" | "30d">("7d");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [activeHoverIndex, setActiveHoverIndex] = useState<number | null>(null);
 
-  // Quick Restock Modal from Dashboard
+  // Quick Restock Modal
   const [restockItem, setRestockItem] = useState<any>(null);
   const [restockQty, setRestockQty] = useState("50");
   const [isRestocking, setIsRestocking] = useState(false);
 
-  // Quick Create Modals
+  // Quick Create Modal
   const [isQuickProductOpen, setIsQuickProductOpen] = useState(false);
   const [quickProduct, setQuickProduct] = useState({ name: "", mrp: "", sellingPrice: "", openingStock: "50", category: "General" });
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
 
   useEffect(() => {
-    fetchDashboardData(period);
-  }, [period]);
+    fetchDashboardData(period, trendRange);
+  }, [period, trendRange]);
 
-  const fetchDashboardData = async (selectedPeriod: string) => {
+  const fetchDashboardData = async (selectedPeriod: string, selectedTrend: string) => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/v1/dashboard?period=${selectedPeriod}`);
+      const res = await fetch(`/api/v1/dashboard?period=${selectedPeriod}&trend=${selectedTrend}`);
       const json = await res.json();
       if (json.success) {
         setData(json.data);
@@ -78,18 +79,19 @@ export default function DashboardPage() {
           type: "PURCHASE",
           quantity: parseInt(restockQty, 10),
           reason: "Quick 1-Click Dashboard Restock",
-          createdBy: user?.name || "Store Manager",
+          createdBy: "Store Admin",
         }),
       });
       const json = await res.json();
       if (json.success) {
+        toast.success(`Successfully restocked +${restockQty} units of '${restockItem.name}'!`, "Stock Refilled");
         setRestockItem(null);
-        fetchDashboardData(period);
+        fetchDashboardData(period, trendRange);
       } else {
-        alert(json.error?.message || "Restock failed");
+        toast.error(json.error?.message || "Restock failed");
       }
     } catch (err: any) {
-      alert("Error: " + err.message);
+      toast.error("Error: " + err.message);
     } finally {
       setIsRestocking(false);
     }
@@ -113,14 +115,15 @@ export default function DashboardPage() {
       });
       const json = await res.json();
       if (json.success) {
+        toast.success(`Created product '${quickProduct.name}' with ${quickProduct.openingStock || 50} units stock!`, "Product Added");
         setIsQuickProductOpen(false);
         setQuickProduct({ name: "", mrp: "", sellingPrice: "", openingStock: "50", category: "General" });
-        fetchDashboardData(period);
+        fetchDashboardData(period, trendRange);
       } else {
-        alert(json.error?.message || "Failed to create product");
+        toast.error(json.error?.message || "Failed to create product");
       }
     } catch (err: any) {
-      alert("Error: " + err.message);
+      toast.error("Error: " + err.message);
     } finally {
       setIsCreatingProduct(false);
     }
@@ -134,6 +137,65 @@ export default function DashboardPage() {
     }).format(amount || 0);
   };
 
+  const formatCompactCurrency = (amount: number = 0) => {
+    if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`;
+    if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}k`;
+    return `₹${amount}`;
+  };
+
+  // --- SVG Chart Calculations ---
+  const trendData: Array<{ date: string; label: string; dayName: string; revenue: number; bills: number }> =
+    data?.salesTrend || [];
+
+  const rawMax = Math.max(...trendData.map((d) => d.revenue || 0), 1000);
+
+  // Calculate nice round ceiling with ~20% headroom so peak points never touch the ceiling
+  const getNiceCeiling = (val: number) => {
+    const withHeadroom = val * 1.2;
+    if (withHeadroom <= 5000) return Math.ceil(withHeadroom / 1000) * 1000;
+    if (withHeadroom <= 20000) return Math.ceil(withHeadroom / 2500) * 2500;
+    if (withHeadroom <= 50000) return Math.ceil(withHeadroom / 5000) * 5000;
+    if (withHeadroom <= 100000) return Math.ceil(withHeadroom / 10000) * 10000;
+    if (withHeadroom <= 500000) return Math.ceil(withHeadroom / 50000) * 50000;
+    return Math.ceil(withHeadroom / 100000) * 100000;
+  };
+  const maxRevenue = getNiceCeiling(rawMax);
+
+  const chartWidth = 700;
+  const chartHeight = 220;
+  const padLeft = 55;
+  const padRight = 25;
+  const padTop = 30;
+  const padBottom = 38;
+
+  const usableWidth = chartWidth - padLeft - padRight;
+  const usableHeight = chartHeight - padTop - padBottom;
+  const slotCount = Math.max(trendData.length, 1);
+  const slotWidth = usableWidth / slotCount;
+  const barWidth = Math.min(38, Math.max(12, slotWidth * 0.55));
+
+  const chartBars = trendData.map((d, idx) => {
+    const centerX = padLeft + idx * slotWidth + slotWidth / 2;
+    const x = centerX - barWidth / 2;
+    const rawHeight = ((d.revenue || 0) / maxRevenue) * usableHeight;
+    const height = Math.max(d.revenue > 0 ? 5 : 2, rawHeight);
+    const y = padTop + usableHeight - height;
+    const isToday = d.label?.toLowerCase().includes("today") || idx === trendData.length - 1;
+    return { ...d, x, y, width: barWidth, height, centerX, isToday };
+  });
+
+  const activeBar = activeHoverIndex !== null ? chartBars[activeHoverIndex] : null;
+
+  // Payment Breakdown Percentages
+  const totalRev = Number(data?.sales?.totalRevenue || 0);
+  const cashRev = Number(data?.paymentBreakdown?.cash?.amount || data?.sales?.cashRevenue || 0);
+  const upiRev = Number(data?.paymentBreakdown?.upi?.amount || data?.sales?.upiRevenue || 0);
+  const cardRev = Number(data?.paymentBreakdown?.card?.amount || data?.sales?.cardRevenue || 0);
+
+  const cashPct = totalRev > 0 ? Math.round((cashRev / totalRev) * 100) : 0;
+  const upiPct = totalRev > 0 ? Math.round((upiRev / totalRev) * 100) : 0;
+  const cardPct = totalRev > 0 ? Math.max(0, 100 - cashPct - upiPct) : 0;
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-zinc-50/50 p-4 sm:p-6 lg:p-8 dark:bg-zinc-950">
       <div className="mx-auto max-w-7xl space-y-7">
@@ -142,14 +204,15 @@ export default function DashboardPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-white sm:text-3xl">
-                Operations Command Center
+                Executive Sales & Inventory Dashboard
               </h1>
-              <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-bold text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
-                PRO MAX
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-bold text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                LIVE SYNC
               </span>
             </div>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              Real-time enterprise metrics for products, services, inventory, POS billing, and system compliance.
+              Live sales velocity, payment channel split, and real-time inventory synchronization.
             </p>
           </div>
 
@@ -180,11 +243,19 @@ export default function DashboardPage() {
         {/* Quick Action Hub */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           <Link
-            href="/pos"
-            className="flex items-center gap-2 rounded-xl bg-emerald-600 p-3 text-xs font-bold text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500 active:scale-95 transition-all"
+            href="/billing"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 p-3 text-xs font-bold text-white shadow-md shadow-emerald-600/20 hover:brightness-110 active:scale-95 transition-all"
           >
             <Zap className="h-4 w-4 text-amber-300 fill-amber-300" />
             <span>POS Billing</span>
+          </Link>
+
+          <Link
+            href="/generator"
+            className="flex items-center gap-2 rounded-xl border border-zinc-200/80 bg-white p-3 text-xs font-bold text-zinc-800 hover:border-indigo-400 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 active:scale-95 transition-all"
+          >
+            <Barcode className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+            <span>Label Generator</span>
           </Link>
 
           <button
@@ -196,27 +267,19 @@ export default function DashboardPage() {
           </button>
 
           <Link
-            href="/services"
+            href="/inventory"
             className="flex items-center gap-2 rounded-xl border border-zinc-200/80 bg-white p-3 text-xs font-bold text-zinc-800 hover:border-indigo-400 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 active:scale-95 transition-all"
           >
-            <Wrench className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-            <span>Add Service</span>
+            <Boxes className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <span>Inventory ({data?.inventory?.totalUnitsInStock || 0})</span>
           </Link>
 
           <Link
-            href="/barcodes"
+            href="/history"
             className="flex items-center gap-2 rounded-xl border border-zinc-200/80 bg-white p-3 text-xs font-bold text-zinc-800 hover:border-indigo-400 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 active:scale-95 transition-all"
           >
-            <Barcode className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-            <span>Print Labels</span>
-          </Link>
-
-          <Link
-            href="/scanner"
-            className="flex items-center gap-2 rounded-xl border border-zinc-200/80 bg-white p-3 text-xs font-bold text-zinc-800 hover:border-indigo-400 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 active:scale-95 transition-all"
-          >
-            <ScanLine className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-            <span>Scan Terminal</span>
+            <Receipt className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+            <span>Sales & Bills</span>
           </Link>
 
           <Link
@@ -228,9 +291,9 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* 5 High-Impact KPI Cards */}
+        {/* 5 High-Impact KPI Metric Cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {/* Revenue */}
+          {/* Sales Revenue */}
           <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
@@ -241,11 +304,11 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="mt-2.5">
-              <div className="text-xl font-extrabold text-zinc-900 dark:text-white">
+              <div className="text-xl font-black text-zinc-900 dark:text-white">
                 {loading ? "..." : formatCurrency(data?.sales?.totalRevenue)}
               </div>
               <p className="mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">
-                {data?.sales?.totalBills || 0} invoices ({data?.sales?.totalUnits || 0} units)
+                {data?.sales?.totalBills || 0} invoices ({data?.sales?.totalUnits || 0} items sold)
               </p>
             </div>
           </div>
@@ -254,38 +317,38 @@ export default function DashboardPage() {
           <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                Avg Ticket (AOV)
+                Avg Bill Value (AOV)
               </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
                 <Receipt className="h-4 w-4" />
               </div>
             </div>
             <div className="mt-2.5">
-              <div className="text-xl font-extrabold text-zinc-900 dark:text-white">
+              <div className="text-xl font-black text-zinc-900 dark:text-white">
                 {loading ? "..." : formatCurrency(data?.sales?.aov)}
               </div>
               <p className="mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">
-                Tax collected: {formatCurrency(data?.sales?.totalTax)}
+                Discounts given: {formatCurrency(data?.sales?.totalDiscount)}
               </p>
             </div>
           </div>
 
-          {/* Pending Receivables */}
+          {/* Total Units in Stock */}
           <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                Pending Balances
+                Live Units in Stock
               </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400">
-                <Clock className="h-4 w-4" />
+                <Boxes className="h-4 w-4" />
               </div>
             </div>
             <div className="mt-2.5">
-              <div className="text-xl font-extrabold text-zinc-900 dark:text-white">
-                {loading ? "..." : formatCurrency(data?.sales?.pendingAmount)}
+              <div className="text-xl font-black text-zinc-900 dark:text-white">
+                {loading ? "..." : `${(data?.inventory?.totalUnitsInStock || 0).toLocaleString()} Units`}
               </div>
               <p className="mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">
-                {data?.sales?.pendingCount || 0} unpaid balances
+                Across {data?.inventory?.totalProducts || 0} active products
               </p>
             </div>
           </div>
@@ -301,37 +364,358 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="mt-2.5">
-              <div className="text-xl font-extrabold text-rose-600 dark:text-rose-400">
-                {loading ? "..." : data?.inventory?.lowStockCount || 0}
+              <div className="text-xl font-black text-rose-600 dark:text-rose-400">
+                {loading ? "..." : `${data?.inventory?.lowStockCount || 0} Alerts`}
               </div>
               <p className="mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">
-                {data?.inventory?.outOfStockCount || 0} items completely out
+                {data?.inventory?.outOfStockCount || 0} items at 0 quantity
               </p>
             </div>
           </div>
 
-          {/* Inventory Valuation */}
+          {/* Stock Valuation */}
           <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
                 Inventory Valuation
               </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400">
-                <Boxes className="h-4 w-4" />
+                <IndianRupee className="h-4 w-4" />
               </div>
             </div>
             <div className="mt-2.5">
-              <div className="text-xl font-extrabold text-zinc-900 dark:text-white">
+              <div className="text-xl font-black text-zinc-900 dark:text-white">
                 {loading ? "..." : formatCurrency(data?.inventory?.totalValuation)}
               </div>
               <p className="mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">
-                {data?.inventory?.totalProducts || 0} active products
+                Estimated retail market value
               </p>
             </div>
           </div>
         </div>
 
-        {/* Section 1: Low Stock Actionable Watchlist & Top Selling Products */}
+        {/* Section 1: Interactive Sales Bar Chart & Payment Channels Breakdown */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          {/* Revenue Bar Chart (7 Cols) */}
+          <div className="lg:col-span-7 rounded-2xl border border-zinc-200/80 bg-white p-5 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+                  <BarChart3 className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-xs font-bold text-zinc-900 dark:text-white">
+                    Sales Velocity ({trendRange === "30d" ? "Last 30 Days" : trendRange === "14d" ? "Last 14 Days" : "Last 7 Days"})
+                  </h2>
+                  <p className="text-[10px] text-zinc-400">
+                    Day-by-day revenue velocity & transaction volume
+                  </p>
+                </div>
+              </div>
+
+              {/* Range Toggle */}
+              <div className="flex items-center gap-1 rounded-lg border border-zinc-200/80 bg-zinc-50 p-0.5 text-[10px] font-bold dark:border-zinc-800 dark:bg-zinc-800/60">
+                {(["7d", "14d", "30d"] as const).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setTrendRange(r)}
+                    className={`rounded-md px-2 py-1 transition-all ${
+                      trendRange === r
+                        ? "bg-white text-indigo-600 shadow-xs dark:bg-zinc-900 dark:text-indigo-300"
+                        : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400"
+                    }`}
+                  >
+                    {r.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Interactive SVG Bar Chart Canvas */}
+            <div className="relative w-full">
+              {/* Active Hover Popover Tooltip */}
+              {activeBar && (() => {
+                const isNearTop = activeBar.y < padTop + usableHeight * 0.35;
+                const isNearRight = activeBar.centerX > chartWidth - 110;
+                const isNearLeft = activeBar.centerX < padLeft + 60;
+                const leftPct = (activeBar.centerX / chartWidth) * 100;
+                const topPct = (activeBar.y / chartHeight) * 100;
+
+                return (
+                  <div
+                    className={`absolute z-20 pointer-events-none rounded-xl bg-zinc-900/95 px-3 py-2 text-white shadow-xl backdrop-blur-sm border border-zinc-700/60 text-xs transition-all duration-150 ${
+                      isNearRight
+                        ? "-translate-x-[90%]"
+                        : isNearLeft
+                        ? "-translate-x-[10%]"
+                        : "-translate-x-1/2"
+                    } ${isNearTop ? "translate-y-3" : "-translate-y-[115%]"}`}
+                    style={{
+                      left: `${leftPct}%`,
+                      top: `${topPct}%`,
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-400">
+                      <span>{activeBar.dayName}, {activeBar.label}</span>
+                      {activeBar.isToday && (
+                        <span className="rounded bg-indigo-500/30 px-1 py-0.2 text-[9px] font-bold text-indigo-300">
+                          TODAY
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-black text-emerald-400 text-sm mt-0.5">
+                      {formatCurrency(activeBar.revenue)}
+                    </p>
+                    <p className="text-[10px] text-zinc-300">
+                      {activeBar.bills} {activeBar.bills === 1 ? "invoice" : "invoices"}
+                    </p>
+                  </div>
+                );
+              })()}
+
+              <svg
+                viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                className="w-full h-48 overflow-visible"
+              >
+                <defs>
+                  <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#6366f1" />
+                    <stop offset="100%" stopColor="#818cf8" />
+                  </linearGradient>
+                  <linearGradient id="barGradHover" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4f46e5" />
+                    <stop offset="100%" stopColor="#6366f1" />
+                  </linearGradient>
+                  <linearGradient id="todayBarGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#7c3aed" />
+                    <stop offset="100%" stopColor="#a855f7" />
+                  </linearGradient>
+                </defs>
+
+                {/* Y-Axis Grid Lines & Values */}
+                {[0, 0.25, 0.5, 0.75, 1].map((pct, idx) => {
+                  const y = padTop + usableHeight - pct * usableHeight;
+                  const val = pct * maxRevenue;
+                  return (
+                    <g key={idx}>
+                      <line
+                        x1={padLeft}
+                        y1={y}
+                        x2={chartWidth - padRight}
+                        y2={y}
+                        stroke="currentColor"
+                        strokeDasharray="3 3"
+                        className="text-zinc-100 dark:text-zinc-800/80"
+                      />
+                      <text
+                        x={padLeft - 8}
+                        y={y + 3}
+                        textAnchor="end"
+                        className="text-[9px] font-mono fill-zinc-400"
+                      >
+                        {formatCompactCurrency(val)}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* Vertical Bar Columns */}
+                {chartBars.map((bar, idx) => {
+                  const isHovered = activeHoverIndex === idx;
+                  const barFill = isHovered
+                    ? "url(#barGradHover)"
+                    : bar.isToday
+                    ? "url(#todayBarGrad)"
+                    : "url(#barGrad)";
+
+                  return (
+                    <g
+                      key={idx}
+                      onMouseEnter={() => setActiveHoverIndex(idx)}
+                      onMouseLeave={() => setActiveHoverIndex(null)}
+                      className="cursor-pointer transition-opacity"
+                    >
+                      {/* Background Column Slot Track */}
+                      <rect
+                        x={bar.x}
+                        y={padTop}
+                        width={bar.width}
+                        height={usableHeight}
+                        rx="6"
+                        ry="6"
+                        className={`transition-colors ${
+                          isHovered
+                            ? "fill-indigo-50/70 dark:fill-indigo-950/40"
+                            : "fill-zinc-100/60 dark:fill-zinc-800/30"
+                        }`}
+                      />
+
+                      {/* Revenue Bar Column */}
+                      <rect
+                        x={bar.x}
+                        y={bar.y}
+                        width={bar.width}
+                        height={bar.height}
+                        rx="5"
+                        ry="5"
+                        fill={barFill}
+                        className={`transition-all duration-200 ${
+                          isHovered ? "filter drop-shadow-[0_4px_8px_rgba(99,102,241,0.4)]" : ""
+                        }`}
+                      />
+
+                      {/* Top Value Tag on Non-Zero High or Hovered Bars */}
+                      {(isHovered || (bar.revenue > 0 && bar.height > 24)) && (
+                        <text
+                          x={bar.centerX}
+                          y={bar.y - 6}
+                          textAnchor="middle"
+                          className={`text-[8.5px] font-mono font-bold ${
+                            isHovered
+                              ? "fill-indigo-600 dark:fill-indigo-400 text-[9.5px]"
+                              : bar.isToday
+                              ? "fill-purple-600 dark:fill-purple-400"
+                              : "fill-zinc-500 dark:fill-zinc-400"
+                          }`}
+                        >
+                          {formatCompactCurrency(bar.revenue)}
+                        </text>
+                      )}
+
+                      {/* X-Axis Day/Date Tag */}
+                      <text
+                        x={bar.centerX}
+                        y={chartHeight - 12}
+                        textAnchor="middle"
+                        className={`text-[9px] font-mono transition-all ${
+                          isHovered
+                            ? "fill-indigo-600 dark:fill-indigo-400 font-bold text-[10px]"
+                            : bar.isToday
+                            ? "fill-purple-600 dark:fill-purple-400 font-bold"
+                            : "fill-zinc-400"
+                        }`}
+                      >
+                        {bar.label}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+          </div>
+
+          {/* Payment Breakdown (5 Cols) */}
+          <div className="lg:col-span-5 rounded-2xl border border-zinc-200/80 bg-white p-5 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900 space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400">
+                  <Banknote className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-xs font-bold text-zinc-900 dark:text-white">
+                    Payment Breakdown ({period})
+                  </h2>
+                  <p className="text-[10px] text-zinc-400">Real-time revenue split across payment channels</p>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono font-bold text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+                Total: {formatCurrency(totalRev)}
+              </span>
+            </div>
+
+            {/* Visual Multi-Segment Bar */}
+            <div className="space-y-2">
+              <div className="flex h-4 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800 shadow-inner p-0.5 gap-0.5">
+                {cashPct > 0 && (
+                  <div
+                    style={{ width: `${cashPct}%` }}
+                    className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                    title={`Cash: ${cashPct}% (${formatCurrency(cashRev)})`}
+                  />
+                )}
+                {upiPct > 0 && (
+                  <div
+                    style={{ width: `${upiPct}%` }}
+                    className="h-full rounded-full bg-indigo-500 transition-all duration-500"
+                    title={`UPI / QR: ${upiPct}% (${formatCurrency(upiRev)})`}
+                  />
+                )}
+                {cardPct > 0 && (
+                  <div
+                    style={{ width: `${cardPct}%` }}
+                    className="h-full rounded-full bg-purple-500 transition-all duration-500"
+                    title={`Card: ${cardPct}% (${formatCurrency(cardRev)})`}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Detailed Payment Channel Cards with Progress Bars */}
+            <div className="space-y-2.5">
+              {/* Cash Channel */}
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 dark:border-emerald-950/60 dark:bg-emerald-950/20">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                    <Banknote className="h-4 w-4" />
+                    <span>Cash</span>
+                  </div>
+                  <span className="font-mono text-xs font-black text-zinc-900 dark:text-white">
+                    {formatCurrency(cashRev)}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-500 font-mono">
+                  <span>{cashPct}% share</span>
+                  <span>{data?.paymentBreakdown?.cash?.count || 0} transactions</span>
+                </div>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-emerald-200/60 dark:bg-emerald-950">
+                  <div style={{ width: `${cashPct}%` }} className="h-full bg-emerald-500 rounded-full" />
+                </div>
+              </div>
+
+              {/* UPI / QR Channel */}
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 dark:border-indigo-950/60 dark:bg-indigo-950/20">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-400">
+                    <Smartphone className="h-4 w-4" />
+                    <span>UPI / QR</span>
+                  </div>
+                  <span className="font-mono text-xs font-black text-zinc-900 dark:text-white">
+                    {formatCurrency(upiRev)}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-500 font-mono">
+                  <span>{upiPct}% share</span>
+                  <span>{data?.paymentBreakdown?.upi?.count || 0} transactions</span>
+                </div>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-indigo-200/60 dark:bg-indigo-950">
+                  <div style={{ width: `${upiPct}%` }} className="h-full bg-indigo-500 rounded-full" />
+                </div>
+              </div>
+
+              {/* Card Channel */}
+              <div className="rounded-xl border border-purple-100 bg-purple-50/40 p-3 dark:border-purple-950/60 dark:bg-purple-950/20">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-purple-700 dark:text-purple-400">
+                    <CreditCard className="h-4 w-4" />
+                    <span>Card</span>
+                  </div>
+                  <span className="font-mono text-xs font-black text-zinc-900 dark:text-white">
+                    {formatCurrency(cardRev)}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-500 font-mono">
+                  <span>{cardPct}% share</span>
+                  <span>{data?.paymentBreakdown?.card?.count || 0} transactions</span>
+                </div>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-purple-200/60 dark:bg-purple-950">
+                  <div style={{ width: `${cardPct}%` }} className="h-full bg-purple-500 rounded-full" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 2: Low Stock Watchlist & Top Selling Products */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Low Stock Watchlist (7 cols) with 1-Click Restock */}
           <div className="lg:col-span-7 rounded-2xl border border-zinc-200/80 bg-white p-5 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900 space-y-3.5">
@@ -345,7 +729,7 @@ export default function DashboardPage() {
                     Stock Attention Watchlist
                   </h2>
                   <p className="text-[10px] text-zinc-400">
-                    Products at or below minimum threshold — restock with 1-click
+                    Products with stock &le; 5 units — restock with 1-click
                   </p>
                 </div>
               </div>
@@ -376,20 +760,24 @@ export default function DashboardPage() {
                         {item.name}
                       </p>
                       <p className="font-mono text-[10px] text-zinc-400">
-                        Code: {item.itemNumber || item.barcodeNumber} • Min: {item.minStock}
+                        Code: {item.itemNumber || item.barcodeNumber || item.customBarcode || "ITEM"} • Price: {formatCurrency(item.salesPrice || item.sellingPrice || item.mrp)}
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="rounded-md bg-rose-100 px-2 py-0.5 text-[10px] font-black text-rose-700 dark:bg-rose-950 dark:text-rose-400">
-                        {item.currentStock} Units Left
+                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-black ${
+                        item.currentStock <= 0
+                          ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400"
+                          : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                      }`}>
+                        {item.currentStock || 0} Units Left
                       </span>
                       <button
                         onClick={() => {
                           setRestockItem(item);
                           setRestockQty("50");
                         }}
-                        className="flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-500 shadow-xs active:scale-95"
+                        className="flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-500 shadow-xs active:scale-95 transition-all"
                       >
                         <Plus className="h-3 w-3" />
                         Restock
@@ -408,15 +796,18 @@ export default function DashboardPage() {
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
                   <TrendingUp className="h-4 w-4" />
                 </div>
-                <h2 className="text-xs font-bold text-zinc-900 dark:text-white">
-                  Top Sellers ({period})
-                </h2>
+                <div>
+                  <h2 className="text-xs font-bold text-zinc-900 dark:text-white">
+                    Top Sellers ({period})
+                  </h2>
+                  <p className="text-[10px] text-zinc-400">Most billed items</p>
+                </div>
               </div>
               <Link
-                href="/reports"
+                href="/history"
                 className="text-[11px] font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
               >
-                Full report
+                All sales
               </Link>
             </div>
 
@@ -441,7 +832,7 @@ export default function DashboardPage() {
                         <p className="font-bold text-zinc-900 dark:text-white truncate">
                           {p.productName}
                         </p>
-                        <p className="text-[10px] text-zinc-400 font-mono">{p.barcodeNumber}</p>
+                        <p className="text-[10px] text-zinc-400 font-mono">{p.barcodeNumber || "N/A"}</p>
                       </div>
                     </div>
 
@@ -458,151 +849,88 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Section 2: Recent Live Invoices & Real-time Audit Trail */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* Recent Invoices (7 cols) */}
-          <div className="lg:col-span-7 rounded-2xl border border-zinc-200/80 bg-white p-5 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900 space-y-3.5">
-            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800">
-              <div className="flex items-center gap-2">
-                <Receipt className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                <h2 className="text-xs font-bold text-zinc-900 dark:text-white">
-                  Live POS Transaction Stream
-                </h2>
-              </div>
-              <Link
-                href="/invoices"
-                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-              >
-                All invoices
-              </Link>
+        {/* Section 3: Live POS Transaction Stream */}
+        <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900 space-y-3.5">
+          <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800">
+            <div className="flex items-center gap-2">
+              <Receipt className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              <h2 className="text-xs font-bold text-zinc-900 dark:text-white">
+                Live POS Transaction Stream
+              </h2>
             </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-zinc-100 font-semibold uppercase text-zinc-400 dark:border-zinc-800">
-                    <th className="py-2.5 px-2">Invoice</th>
-                    <th className="py-2.5 px-2">Customer</th>
-                    <th className="py-2.5 px-2">Method</th>
-                    <th className="py-2.5 px-2 text-right">Amount</th>
-                    <th className="py-2.5 px-2 text-right">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={5} className="py-6 text-center text-zinc-400">
-                        Loading transactions...
-                      </td>
-                    </tr>
-                  ) : !data?.recentInvoices || data.recentInvoices.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-6 text-center text-zinc-400">
-                        No invoices generated yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    data.recentInvoices.map((inv: any) => (
-                      <tr key={inv._id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30">
-                        <td className="py-2.5 px-2 font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                          {inv.invoiceNumber}
-                        </td>
-                        <td className="py-2.5 px-2 text-zinc-800 dark:text-zinc-200">
-                          {inv.customer?.name || "Walk-in"}
-                        </td>
-                        <td className="py-2.5 px-2">
-                          <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                            {inv.paymentMethod}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-2 text-right font-black text-zinc-900 dark:text-white">
-                          {formatCurrency(inv.grandTotal)}
-                        </td>
-                        <td className="py-2.5 px-2 text-right">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-extrabold ${
-                              inv.paymentStatus === "PAID"
-                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
-                                : "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
-                            }`}
-                          >
-                            {inv.paymentStatus}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <Link
+              href="/history"
+              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+            >
+              View Full History
+            </Link>
           </div>
 
-          {/* Real-time Audit & Operational Health (5 cols) */}
-          <div className="lg:col-span-5 space-y-4">
-            {/* Audit Feed */}
-            <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-900 space-y-3">
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-2.5 dark:border-zinc-800">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                  <h2 className="text-xs font-bold text-zinc-900 dark:text-white">
-                    Compliance & Activity Trail
-                  </h2>
-                </div>
-                <Link
-                  href="/audit"
-                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-                >
-                  Logs
-                </Link>
-              </div>
-
-              <div className="space-y-2 text-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-zinc-100 font-semibold uppercase text-zinc-400 dark:border-zinc-800">
+                  <th className="py-2.5 px-3">Invoice</th>
+                  <th className="py-2.5 px-3">Customer</th>
+                  <th className="py-2.5 px-3">Mobile</th>
+                  <th className="py-2.5 px-3">Method</th>
+                  <th className="py-2.5 px-3 text-right">Amount</th>
+                  <th className="py-2.5 px-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
                 {loading ? (
-                  <div className="py-4 text-center text-zinc-400">Loading audit feed...</div>
-                ) : !data?.recentAudits || data.recentAudits.length === 0 ? (
-                  <div className="py-4 text-center text-zinc-400">No activity logged yet.</div>
+                  <tr>
+                    <td colSpan={6} className="py-6 text-center text-zinc-400">
+                      Loading transactions...
+                    </td>
+                  </tr>
+                ) : !data?.recentInvoices || data.recentInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-6 text-center text-zinc-400">
+                      No invoices generated yet.
+                    </td>
+                  </tr>
                 ) : (
-                  data.recentAudits.map((a: any) => (
-                    <div
-                      key={a._id}
-                      className="flex items-center justify-between py-1 border-b border-zinc-100/60 dark:border-zinc-800/60 last:border-0"
-                    >
-                      <div>
-                        <span className="font-bold text-zinc-800 dark:text-zinc-200">{a.userName}</span>
-                        <span className="text-[10px] text-zinc-400 ml-1.5 font-mono">
-                          [{a.action}]
+                  data.recentInvoices.map((inv: any) => (
+                    <tr key={inv._id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30">
+                      <td className="py-3 px-3 font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                        {inv.invoiceNumber}
+                      </td>
+                      <td className="py-3 px-3 font-semibold text-zinc-800 dark:text-zinc-200">
+                        {inv.customer?.name || "Walk-in"}
+                      </td>
+                      <td className="py-3 px-3 font-mono text-zinc-500">
+                        {inv.customer?.mobile || "N/A"}
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className={`inline-flex rounded px-2 py-0.5 text-[10px] font-bold ${
+                          inv.paymentMethod?.toLowerCase().includes("upi")
+                            ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+                            : inv.paymentMethod?.toLowerCase().includes("card")
+                            ? "bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300"
+                            : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                        }`}>
+                          {inv.paymentMethod}
                         </span>
-                      </div>
-                      <span className="text-[10px] text-zinc-400">
-                        {new Date(a.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </div>
+                      </td>
+                      <td className="py-3 px-3 text-right font-black text-zinc-900 dark:text-white">
+                        {formatCurrency(inv.grandTotal)}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <Link
+                          href={`/api/bills/${inv.invoiceNumber}/pdf`}
+                          target="_blank"
+                          className="inline-flex items-center gap-1 rounded-lg bg-zinc-100 px-2 py-1 text-[11px] font-bold text-zinc-700 hover:bg-indigo-50 hover:text-indigo-600 dark:bg-zinc-800 dark:text-zinc-300"
+                        >
+                          <Eye className="h-3 w-3" /> PDF
+                        </Link>
+                      </td>
+                    </tr>
                   ))
                 )}
-              </div>
-            </div>
-
-            {/* Operational Health Monitor Card */}
-            <div className="rounded-2xl border border-zinc-200/80 bg-zinc-900 p-4 shadow-xs text-white space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                  <Server className="h-4 w-4" />
-                  <span>System Engine Status</span>
-                </div>
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-zinc-800 font-mono text-zinc-300">
-                <div>
-                  <span className="text-zinc-500 block">Database:</span>
-                  <span className="text-emerald-400 font-bold">MongoDB Cluster Online</span>
-                </div>
-                <div>
-                  <span className="text-zinc-500 block">Allocated Barcodes:</span>
-                  <span className="text-white font-bold">{data?.operationalHealth?.lastAllocatedBarcode || 100000}</span>
-                </div>
-              </div>
-            </div>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -625,7 +953,7 @@ export default function DashboardPage() {
 
             <form onSubmit={handleQuickRestockSubmit} className="space-y-3 text-xs">
               <div>
-                <p className="text-zinc-500">Current Stock: <strong className="text-rose-600">{restockItem.currentStock} units</strong> (Min: {restockItem.minStock})</p>
+                <p className="text-zinc-500">Current Stock: <strong className="text-rose-600">{restockItem.currentStock || 0} units</strong> (Min: {restockItem.minStock || 5})</p>
               </div>
 
               <div>
@@ -684,7 +1012,7 @@ export default function DashboardPage() {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Wireless Mouse X100"
+                  placeholder="e.g. Kids Toy Car X100"
                   value={quickProduct.name}
                   onChange={(e) => setQuickProduct({ ...quickProduct, name: e.target.value })}
                   className="w-full rounded-xl border border-zinc-200 p-2.5 outline-none focus:border-indigo-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
@@ -703,7 +1031,7 @@ export default function DashboardPage() {
                     placeholder="999"
                     value={quickProduct.sellingPrice}
                     onChange={(e) => setQuickProduct({ ...quickProduct, sellingPrice: e.target.value })}
-                    className="w-full rounded-xl border border-zinc-200 p-2.5 outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    className="w-full rounded-xl border border-zinc-200 p-2.5 outline-none focus:border-indigo-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
                   />
                 </div>
                 <div>

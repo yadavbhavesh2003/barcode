@@ -43,25 +43,48 @@ export async function createProduct(input: CreateProductInput) {
     throw new Error("Product name is required");
   }
 
-  // 1. Determine Item Number (use provided or auto-generate)
-  let itemNumber = input.itemNumber?.trim();
+  // 1. Determine Item Number & Barcode
+  let itemNumber = (input.itemNumber || input.barcodeNumber)?.trim();
   if (!itemNumber) {
     itemNumber = await generateNextBarcodeSequence();
   }
+  let barcodeNumber = (input.barcodeNumber || itemNumber)?.trim();
 
-  // Check if itemNumber already exists
-  const existingItem = await ProductModel.findOne({ itemNumber });
-  if (existingItem) {
-    const err: any = new Error(`Item Number '${itemNumber}' already exists for product '${existingItem.name}'`);
-    err.code = "ITEM_NUMBER_ALREADY_EXISTS";
-    err.details = { itemNumber, existingProductName: existingItem.name, existingProductId: existingItem._id };
+  // Check if Barcode or Item Code already exists
+  const duplicate = await ProductModel.findOne({
+    $or: [
+      { itemNumber },
+      { barcodeNumber },
+      { customBarcode: barcodeNumber },
+      { sku: itemNumber },
+    ],
+    status: { $ne: "archived" },
+  });
+
+  if (duplicate) {
+    const err: any = new Error(
+      `Barcode / Item Code '${barcodeNumber || itemNumber}' is already registered for product '${duplicate.name}'. Duplicate barcodes cannot be added.`
+    );
+    err.code = "BARCODE_ALREADY_EXISTS";
+    err.details = { itemNumber: barcodeNumber || itemNumber, existingProductName: duplicate.name, existingProductId: duplicate._id };
     throw err;
   }
 
-  // 2. Determine Barcode
-  let barcodeNumber = input.barcodeNumber?.trim();
-  if (!barcodeNumber) {
-    barcodeNumber = itemNumber;
+  const mrp = Number(input.mrp) || 0;
+  const sellingPrice = Number(input.sellingPrice) || 0;
+
+  if (mrp <= 0) {
+    throw new Error("MRP must be greater than 0");
+  }
+  if (sellingPrice <= 0) {
+    throw new Error("Selling Price must be greater than 0");
+  }
+  if (sellingPrice > mrp) {
+    const err: any = new Error(
+      `Selling Price (₹${sellingPrice}) cannot exceed Maximum Retail Price (MRP ₹${mrp}).`
+    );
+    err.code = "SELLING_PRICE_EXCEEDS_MRP";
+    throw err;
   }
 
   // 3. Create Product
@@ -152,25 +175,19 @@ export async function searchProducts({
 
   if (query && query.trim()) {
     const q = query.trim();
-    // Check exact barcode or item number match first
-    const exactMatch = await ProductModel.findOne({
-      $or: [{ barcodeNumber: q }, { itemNumber: q }, { sku: q }],
-      status: { $ne: "archived" },
-    });
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escaped, "i");
 
-    if (exactMatch) {
-      return {
-        products: [exactMatch],
-        pagination: { page: 1, limit, total: 1, pages: 1 },
-      };
-    }
-
-    // Otherwise regex partial search
     filter.$or = [
-      { name: { $regex: q, $options: "i" } },
-      { shortName: { $regex: q, $options: "i" } },
-      { category: { $regex: q, $options: "i" } },
-      { brand: { $regex: q, $options: "i" } },
+      { name: regex },
+      { itemNumber: regex },
+      { barcodeNumber: regex },
+      { customBarcode: regex },
+      { sku: regex },
+      { shortName: regex },
+      { category: regex },
+      { brand: regex },
+      { hsnSac: regex },
     ];
   }
 

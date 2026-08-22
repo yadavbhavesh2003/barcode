@@ -28,8 +28,7 @@ export async function GET(req: NextRequest) {
           $group: {
             _id: { $dateToString: { format: "%Y-%m-%d", date: "$invoiceDate" } },
             totalSales: { $sum: "$grandTotal" },
-            taxableAmount: { $sum: "$taxableAmount" },
-            totalGst: { $sum: "$totalGst" },
+            totalDiscount: { $sum: "$totalDiscount" },
             billsCount: { $sum: 1 },
             itemsSold: { $sum: "$totalQuantity" },
           },
@@ -40,26 +39,54 @@ export async function GET(req: NextRequest) {
       return sendSuccess({ type: reportType, data: salesData });
     }
 
-    if (reportType === "gst_report") {
+    if (reportType === "payment_breakdown" || reportType === "gst_report") {
       const match: any = { status: "ACTIVE" };
       if (startDateStr || endDateStr) match.invoiceDate = dateFilter;
 
-      const gstBreakdown = await InvoiceModel.aggregate([
+      const paymentBreakdown = await InvoiceModel.aggregate([
         { $match: match },
         {
           $group: {
             _id: null,
-            totalTaxable: { $sum: "$taxableAmount" },
-            totalCGST: { $sum: "$cgstAmount" },
-            totalSGST: { $sum: "$sgstAmount" },
-            totalIGST: { $sum: "$igstAmount" },
-            totalGST: { $sum: "$totalGst" },
+            totalTurnover: { $sum: "$grandTotal" },
+            totalDiscount: { $sum: "$totalDiscount" },
             totalInvoices: { $sum: 1 },
+            totalUnits: { $sum: "$totalQuantity" },
+            cashRevenue: {
+              $sum: {
+                $cond: [{ $eq: [{ $toUpper: "$paymentMethod" }, "CASH"] }, "$grandTotal", 0],
+              },
+            },
+            cashCount: {
+              $sum: {
+                $cond: [{ $eq: [{ $toUpper: "$paymentMethod" }, "CASH"] }, 1, 0],
+              },
+            },
+            upiRevenue: {
+              $sum: {
+                $cond: [{ $eq: [{ $toUpper: "$paymentMethod" }, "UPI"] }, "$grandTotal", 0],
+              },
+            },
+            upiCount: {
+              $sum: {
+                $cond: [{ $eq: [{ $toUpper: "$paymentMethod" }, "UPI"] }, 1, 0],
+              },
+            },
+            cardRevenue: {
+              $sum: {
+                $cond: [{ $eq: [{ $toUpper: "$paymentMethod" }, "CARD"] }, "$grandTotal", 0],
+              },
+            },
+            cardCount: {
+              $sum: {
+                $cond: [{ $eq: [{ $toUpper: "$paymentMethod" }, "CARD"] }, 1, 0],
+              },
+            },
           },
         },
       ]);
 
-      return sendSuccess({ type: reportType, data: gstBreakdown[0] || {} });
+      return sendSuccess({ type: reportType, data: paymentBreakdown[0] || {} });
     }
 
     if (reportType === "product_sales") {
@@ -75,9 +102,9 @@ export async function GET(req: NextRequest) {
             productName: { $first: "$items.productName" },
             barcodeNumber: { $first: "$items.barcodeNumber" },
             hsnSac: { $first: "$items.hsnSac" },
+            unitPrice: { $first: "$items.unitPrice" },
             totalQuantitySold: { $sum: "$items.quantity" },
             totalRevenue: { $sum: "$items.lineTotal" },
-            totalTax: { $sum: "$items.totalGst" },
           },
         },
         { $sort: { totalQuantitySold: -1 } },

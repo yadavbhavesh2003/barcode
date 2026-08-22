@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { hashPassword, DEFAULT_ROLE_PERMISSIONS } from "../auth";
 
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/barcode_generator";
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/barcode2";
 
 interface MongooseCache {
   conn: typeof mongoose | null;
@@ -111,15 +111,17 @@ const NotificationSchema = new mongoose.Schema(
     title: { type: String, required: true },
     message: { type: String, required: true },
     type: { type: String, enum: ["info", "warning", "error", "success"], default: "info" },
-    category: { type: String, enum: ["stock", "invoice", "system", "security"], default: "system" },
+    category: { type: String, default: "system" },
     isRead: { type: Boolean, default: false, index: true },
     link: { type: String },
     userId: { type: String },
   },
   { timestamps: true }
 );
-export const NotificationModel =
-  mongoose.models.Notification || mongoose.model("Notification", NotificationSchema);
+if (mongoose.models.Notification) {
+  delete (mongoose.models as any).Notification;
+}
+export const NotificationModel = mongoose.model("Notification", NotificationSchema);
 
 // 4. Product Master
 const ProductSchema = new mongoose.Schema(
@@ -291,20 +293,24 @@ const InvoiceItemSchema = new mongoose.Schema(
   {
     productId: { type: mongoose.Schema.Types.Mixed },
     barcodeNumber: { type: String, default: "N/A" },
+    barcode: { type: String },
     productName: { type: String, required: true },
     hsnSac: { type: String, default: "9503" },
-    mrp: { type: Number, required: true },
-    unitPrice: { type: Number, required: true },
-    quantity: { type: Number, required: true },
+    hsn: { type: String, default: "9503" },
+    mrp: { type: Number, default: 0 },
+    unitPrice: { type: Number, default: 0 },
+    salesPrice: { type: Number, default: 0 },
+    quantity: { type: Number, default: 1 },
     discountPct: { type: Number, default: 0 },
     discountAmount: { type: Number, default: 0 },
-    taxableAmount: { type: Number, required: true },
-    gstRate: { type: Number, required: true },
+    taxableAmount: { type: Number, default: 0 },
+    gstRate: { type: Number, default: 5 },
     cgstAmount: { type: Number, default: 0 },
     sgstAmount: { type: Number, default: 0 },
     igstAmount: { type: Number, default: 0 },
-    totalGst: { type: Number, required: true },
-    lineTotal: { type: Number, required: true },
+    totalGst: { type: Number, default: 0 },
+    lineTotal: { type: Number, default: 0 },
+    totalAmount: { type: Number, default: 0 },
     itemType: { type: String, enum: ["PRODUCT", "SERVICE"], default: "PRODUCT" },
   },
   { _id: false }
@@ -313,8 +319,10 @@ const InvoiceItemSchema = new mongoose.Schema(
 const InvoiceSchema = new mongoose.Schema(
   {
     invoiceNumber: { type: String, required: true, unique: true, index: true },
-    financialYear: { type: String, required: true },
-    sequenceNumber: { type: Number, required: true },
+    financialYear: { type: String, default: "2026-27" },
+    sequenceNumber: { type: Number, default: 1 },
+    customerName: { type: String, default: "Walk-in Customer" },
+    customerPhone: { type: String, default: "" },
     customer: {
       customerId: { type: mongoose.Schema.Types.ObjectId, ref: "Customer" },
       name: { type: String, default: "Walk-in Customer" },
@@ -324,23 +332,28 @@ const InvoiceSchema = new mongoose.Schema(
       address: { type: String },
     },
     items: [InvoiceItemSchema],
-    itemsCount: { type: Number, required: true },
+    totalItems: { type: Number, default: 1 },
+    itemsCount: { type: Number, default: 1 },
     totalQuantity: { type: Number, required: true },
     subtotal: { type: Number, required: true },
+    discount: { type: Number, default: 0 },
+    otherCharges: { type: Number, default: 0 },
     totalDiscount: { type: Number, default: 0 },
-    taxableAmount: { type: Number, required: true },
+    taxableAmount: { type: Number, default: 0 },
     cgstAmount: { type: Number, default: 0 },
     sgstAmount: { type: Number, default: 0 },
     igstAmount: { type: Number, default: 0 },
-    totalGst: { type: Number, required: true },
+    totalGst: { type: Number, default: 0 },
     roundOff: { type: Number, default: 0 },
     grandTotal: { type: Number, required: true },
+
+    paymentMode: { type: String, default: "Cash" },
+    pdfFormat: { type: String, default: "a4" },
 
     payments: [
       {
         method: {
           type: String,
-          enum: ["CASH", "CARD", "UPI", "BANK_TRANSFER", "SPLIT", "OTHER"],
           default: "CASH",
         },
         amount: { type: Number, required: true },
@@ -351,17 +364,15 @@ const InvoiceSchema = new mongoose.Schema(
     ],
     paymentStatus: {
       type: String,
-      enum: ["PAID", "PARTIAL", "PENDING", "FAILED", "REFUNDED"],
       default: "PAID",
       index: true,
     },
     paymentMethod: { type: String, default: "CASH" },
-    paidAmount: { type: Number, required: true },
+    paidAmount: { type: Number, default: 0 },
     balanceAmount: { type: Number, default: 0 },
 
     status: {
       type: String,
-      enum: ["ACTIVE", "CANCELLED", "VOID", "REFUNDED"],
       default: "ACTIVE",
       index: true,
     },
@@ -371,6 +382,34 @@ const InvoiceSchema = new mongoose.Schema(
 
     billedBy: { type: String, default: "Operator" },
     invoiceDate: { type: Date, default: Date.now, index: true },
+
+    // Revision History & Traceability
+    revisionCount: { type: Number, default: 0 },
+    isRevised: { type: Boolean, default: false },
+    revisedAt: { type: Date },
+    revisedBy: { type: String },
+    revisions: [
+      {
+        revisionNumber: { type: Number, required: true },
+        revisedAt: { type: Date, default: Date.now },
+        revisedBy: { type: String, default: "Cashier" },
+        reason: { type: String },
+        previousItems: [InvoiceItemSchema],
+        previousSubtotal: { type: Number },
+        previousDiscount: { type: Number },
+        previousGrandTotal: { type: Number },
+        previousTotalQuantity: { type: Number },
+        stockAdjustments: [
+          {
+            productId: { type: mongoose.Schema.Types.Mixed },
+            productName: { type: String },
+            oldQuantity: { type: Number },
+            newQuantity: { type: Number },
+            deltaQuantity: { type: Number },
+          },
+        ],
+      },
+    ],
   },
   { timestamps: true }
 );
@@ -444,17 +483,23 @@ const AuditLogSchema = new mongoose.Schema(
     userId: { type: String },
     userName: { type: String, default: "System" },
     action: { type: String, required: true, index: true },
-    entity: { type: String, required: true, index: true },
+    entity: { type: String, default: "INVENTORY", index: true },
     entityId: { type: String },
+    module: { type: String, default: "inventory" },
+    details: { type: mongoose.Schema.Types.Mixed },
     oldValue: { type: mongoose.Schema.Types.Mixed },
     newValue: { type: mongoose.Schema.Types.Mixed },
     ipAddress: { type: String },
     userAgent: { type: String },
     requestId: { type: String },
+    timestamp: { type: Date, default: Date.now },
   },
-  { timestamps: { createdAt: true, updatedAt: false } }
+  { timestamps: true }
 );
-export const AuditLogModel = mongoose.models.AuditLog || mongoose.model("AuditLog", AuditLogSchema);
+if (mongoose.models.AuditLog) {
+  delete (mongoose.models as any).AuditLog;
+}
+export const AuditLogModel = mongoose.model("AuditLog", AuditLogSchema);
 
 // 14. System Settings
 const SystemSettingSchema = new mongoose.Schema({

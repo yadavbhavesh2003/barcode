@@ -11,10 +11,10 @@ export async function GET(req: NextRequest) {
     // 1. Fetch DB notifications
     const dbNotifications = await NotificationModel.find().sort({ createdAt: -1 }).limit(10).lean();
 
-    // 2. Synthesize low stock alerts
+    // 2. Synthesize low stock alerts (Stock <= 1 unit)
     const lowStockCount = await ProductModel.countDocuments({
       status: "active",
-      $expr: { $lte: ["$currentStock", "$minStock"] },
+      currentStock: { $lte: 1 },
     });
 
     const dynamicAlerts: any[] = [];

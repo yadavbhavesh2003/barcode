@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useToast } from "@/lib/context/ToastContext";
 import {
   Wrench,
   Search,
@@ -15,9 +16,11 @@ import {
   X,
   FileText,
   Boxes,
+  AlertTriangle,
 } from "lucide-react";
 
 export default function ServicesPage() {
+  const { toast } = useToast();
   const [services, setServices] = useState<any[]>([]);
   const [pagination, setPagination] = useState<any>({ page: 1, limit: 15, total: 0, pages: 1 });
   const [searchQuery, setSearchQuery] = useState("");
@@ -27,6 +30,8 @@ export default function ServicesPage() {
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<any>(null);
+  const [serviceToDelete, setServiceToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [form, setForm] = useState({
     serviceCode: "",
     name: "",
@@ -126,18 +131,27 @@ export default function ServicesPage() {
     }
   };
 
-  const handleDeleteService = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to archive service '${name}'?`)) return;
+  const handleDeleteService = (id: string, name: string) => {
+    setServiceToDelete({ id, name });
+  };
+
+  const confirmDeleteService = async () => {
+    if (!serviceToDelete) return;
     try {
-      const res = await fetch(`/api/v1/services/${id}`, { method: "DELETE" });
+      setIsDeleting(true);
+      const res = await fetch(`/api/v1/services/${serviceToDelete.id}`, { method: "DELETE" });
       const json = await res.json();
       if (json.success) {
+        toast.success(`Archived '${serviceToDelete.name}' successfully`, "Service Archived");
+        setServiceToDelete(null);
         fetchServices(pagination.page, searchQuery);
       } else {
-        alert(json.error?.message || "Failed to delete service");
+        toast.error(json.error?.message || "Failed to delete service");
       }
     } catch (e: any) {
-      alert("Error: " + e.message);
+      toast.error("Error: " + e.message);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -422,6 +436,51 @@ export default function ServicesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Archive Service Confirmation */}
+      {serviceToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-4">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950/70 dark:text-rose-400">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-zinc-900 dark:text-white">
+                  Archive Service
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  Are you sure you want to archive <strong className="text-zinc-900 dark:text-white">&ldquo;{serviceToDelete.name}&rdquo;</strong>?
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800 leading-relaxed">
+              This service item will be hidden from the active services catalog. Historical invoices will remain intact.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setServiceToDelete(null)}
+                className="rounded-xl border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={confirmDeleteService}
+                className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500 shadow-md shadow-rose-600/20 disabled:opacity-50 transition-all active:scale-95"
+              >
+                {isDeleting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                {isDeleting ? "Archiving..." : "Yes, Archive Service"}
+              </button>
+            </div>
           </div>
         </div>
       )}

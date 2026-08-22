@@ -36,20 +36,55 @@ export async function POST(req: NextRequest) {
       const row = rawRows[index];
       const rowIndex = index + 2; // Excel row index
 
+      // Flexible column mapping (case-insensitive & trimmed)
+      const keys = Object.keys(row);
+      const getVal = (possibleHeaders: string[]): any => {
+        for (const ph of possibleHeaders) {
+          const key = keys.find(
+            (k) => k.trim().toLowerCase().replace(/\s+/g, " ") === ph.toLowerCase().replace(/\s+/g, " ")
+          );
+          if (key && row[key] !== undefined && row[key] !== "") return row[key];
+        }
+        return undefined;
+      };
+
       // Extract fields flexibly
       const itemNumber = String(
-        row["Item Number"] || row["Item No"] || row["Barcode"] || row["Code"] || row["itemNumber"] || ""
+        getVal(["#", "Barcode", "Barcode Number", "Item Number", "Item No", "Code", "Custom Barcode", "SKU"]) || ""
       ).trim();
+
       const name = String(
-        row["Item Name"] || row["Product Name"] || row["Name"] || row["Description"] || row["name"] || ""
+        getVal(["Item name", "Item Name", "Product Name", "ProductName", "Name", "Description", "Title"]) || ""
       ).trim();
-      const hsnSac = String(row["HSN/SAC"] || row["HSN"] || row["hsnSac"] || "9503").trim();
-      const mrp = parseFloat(String(row["MRP"] || row["mrp"] || "0").replace(/[^0-9.]/g, "")) || 0;
-      const quantity = parseInt(String(row["Quantity"] || row["Qty"] || row["quantity"] || "1"), 10) || 1;
-      const unitPrice =
-        parseFloat(String(row["Price/Unit"] || row["Selling Price"] || row["Price"] || row["sellingPrice"] || mrp || "0").replace(/[^0-9.]/g, "")) || mrp;
-      const gstRateRaw = String(row["GST Rate"] || row["GST %"] || row["gstRate"] || "5%");
-      const gstRate = parseFloat(gstRateRaw.replace(/[^0-9.]/g, "")) || 5;
+
+      const hsnSac = String(
+        getVal(["HSN/ SAC", "HSN/SAC", "HSN / SAC", "HSN", "SAC", "HSN Code"]) || "9503"
+      ).trim();
+
+      const mrpRaw = getVal(["MRP", "Mrp Price", "Maximum Retail Price", "List Price", "M.R.P."]);
+      const mrp = parseFloat(String(mrpRaw || "0").replace(/[^0-9.]/g, "")) || 0;
+
+      const qtyRaw = getVal(["Quantity", "Qty", "Count", "Opening Stock", "Stock"]);
+      const quantity = parseInt(String(qtyRaw || "1"), 10) || 1;
+
+      const unitPriceRaw = getVal([
+        "Price/ Unit",
+        "Price/Unit",
+        "Price / Unit",
+        "Selling Price",
+        "Sales Price",
+        "Sale Price",
+        "Price",
+        "Rate",
+        "Unit Price",
+      ]);
+      const unitPrice = parseFloat(String(unitPriceRaw || mrp || "0").replace(/[^0-9.]/g, "")) || mrp;
+
+      const gstRateRaw = String(getVal(["GST Rate", "GST %", "Tax Rate", "Rate %"]) || "5%");
+      let gstRate = parseFloat(gstRateRaw.replace(/[^0-9.]/g, "")) || 5;
+      if (gstRate > 0 && gstRate < 1) {
+        gstRate = Math.round(gstRate * 100);
+      }
 
       const errors: string[] = [];
 
@@ -87,7 +122,12 @@ export async function POST(req: NextRequest) {
         seenBarcodes.add(itemNumber);
 
         const existingDb = await ProductModel.findOne({
-          $or: [{ itemNumber }, { barcodeNumber: itemNumber }],
+          $or: [
+            { itemNumber },
+            { barcodeNumber: itemNumber },
+            { customBarcode: itemNumber },
+            { name: rowData.name },
+          ],
         });
 
         if (existingDb) {
@@ -95,46 +135,120 @@ export async function POST(req: NextRequest) {
             ...rowData,
             existingProductId: existingDb._id,
             existingProductName: existingDb.name,
+            currentStock: existingDb.currentStock || 0,
+            newStockAfterImport: (existingDb.currentStock || 0) + rowData.openingStock,
+          });
+          // Also add to valid rows for refill execution
+          validRows.push({
+            ...rowData,
+            isRefill: true,
+            existingProductId: existingDb._id,
+            currentStock: existingDb.currentStock || 0,
           });
           continue;
         }
       }
 
-      validRows.push(rowData);
+      validRows.push({ ...rowData, isRefill: false });
     }
 
-    // If mode is execute, perform database insertion
+    // If mode is execute, perform database insertion and stock increment with full transaction logs
     const createdProducts = [];
+    const refilledProducts = [];
+
     if (mode === "execute" && validRows.length > 0) {
+      const { InventoryTransactionModel, AuditLogModel } = await import("@/lib/db/mongodb");
+
       for (const validRow of validRows) {
         try {
-          const product = await createProduct({
-            itemNumber: validRow.itemNumber || undefined,
-            name: validRow.name,
-            hsnSac: validRow.hsnSac,
-            mrp: validRow.mrp,
-            sellingPrice: validRow.sellingPrice,
-            openingStock: validRow.openingStock,
-            gstRate: validRow.gstRate,
-            category: validRow.category,
-            brand: validRow.brand,
-            createdBy: "Import Wizard",
-          });
-          createdProducts.push(product);
+          if (validRow.isRefill && validRow.existingProductId) {
+            // REFILL EXISTING STOCK
+            const product = await ProductModel.findById(validRow.existingProductId);
+            if (product) {
+              const stockBefore = product.currentStock || 0;
+              const refillQty = validRow.openingStock || 0;
+              const stockAfter = stockBefore + refillQty;
+
+              product.currentStock = stockAfter;
+              product.availableStock = (product.availableStock || 0) + refillQty;
+              if (validRow.mrp) product.mrp = validRow.mrp;
+              if (validRow.sellingPrice) {
+                product.salesPrice = validRow.sellingPrice;
+                product.sellingPrice = validRow.sellingPrice;
+              }
+              if (validRow.hsnSac) product.hsn = validRow.hsnSac;
+              await product.save();
+
+              // Log immutable inventory transaction
+              await InventoryTransactionModel.create({
+                productId: product._id,
+                productName: product.name,
+                type: "PURCHASE",
+                quantity: refillQty,
+                stockBefore,
+                stockAfter,
+                referenceId: `EXCEL-REFILL-${Date.now()}`,
+                reason: `Excel Refill: Added ${refillQty} units (Row #${validRow.rowIndex})`,
+                createdBy: "Excel Import Wizard",
+                createdAt: new Date(),
+              });
+
+              refilledProducts.push({
+                id: product._id,
+                name: product.name,
+                stockBefore,
+                stockAfter,
+                refillQty,
+              });
+            }
+          } else {
+            // CREATE NEW PRODUCT (createProduct already logs initial OPENING_STOCK)
+            const newProduct = await createProduct({
+              itemNumber: validRow.itemNumber || undefined,
+              name: validRow.name,
+              hsnSac: validRow.hsnSac,
+              mrp: validRow.mrp,
+              sellingPrice: validRow.sellingPrice,
+              openingStock: validRow.openingStock,
+              gstRate: validRow.gstRate,
+              category: validRow.category,
+              brand: validRow.brand,
+              createdBy: "Import Wizard",
+            });
+
+            createdProducts.push(newProduct);
+          }
         } catch (e: any) {
           invalidRows.push({ ...validRow, errors: [e.message] });
         }
       }
+
+      // System audit log
+      await AuditLogModel.create({
+        action: "Bulk Excel Product Import",
+        entity: "PRODUCT",
+        module: "inventory",
+        details: JSON.stringify({
+          fileName: file.name,
+          newCreated: createdProducts.length,
+          refilled: refilledProducts.length,
+          invalidCount: invalidRows.length,
+        }),
+        timestamp: new Date(),
+      });
     }
 
     return sendSuccess({
       summary: {
         totalRows: rawRows.length,
         validCount: validRows.length,
+        newProductsCount: validRows.filter((r) => !r.isRefill).length,
+        refillStockCount: existingInDbRows.length,
         invalidCount: invalidRows.length,
         duplicateCount: duplicateRows.length,
-        existingInDbCount: existingInDbRows.length,
-        importedCount: createdProducts.length,
+        importedCount: createdProducts.length + refilledProducts.length,
+        newCreatedCount: createdProducts.length,
+        refilledCount: refilledProducts.length,
       },
       validRows: validRows.slice(0, 100),
       invalidRows,
